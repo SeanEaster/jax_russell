@@ -11,7 +11,6 @@ from jax.scipy.special import gammaln
 
 from jax_russell.base import ValuationModel
 
-
 # binomial as suggested here https://github.com/google/jax/discussions/7044
 def comb(
     N: jaxtyping.Float[jaxtyping.Array, "*"],
