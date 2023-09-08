@@ -25,6 +25,8 @@ python = ">=3.11,<4.0"
 click = "8.0.1"
 jaxtyping = ">=0.2.1,<1"
 jax = ">=0.4.14,<1"
+jaxlib = ">=0.4.14,<1"
+pymdown-extensions = "^9.4"
 typeguard = ">=4.1.2,<5"
 
 black = { version = "^23.7.0", optional = true }
