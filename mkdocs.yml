@@ -26,6 +26,8 @@ markdown_extensions:
   - pymdownx.emoji:
       emoji_index: !!python/name:materialx.emoji.twemoji
       emoji_generator: !!python/name:materialx.emoji.to_svg
+  - pymdownx.arithmatex:  # Render LaTeX via MathJax
+        generic: true
   - pymdownx.critic
   - pymdownx.caret
   - pymdownx.mark
@@ -52,6 +54,10 @@ plugins:
   - mkdocstrings:
       watch:
         - jax_russell
+      handlers:
+        python:
+          options:
+            inherited_members: True
 extra:
   social:
     - icon: fontawesome/brands/twitter
