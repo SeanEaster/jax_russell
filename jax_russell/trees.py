@@ -2,15 +2,24 @@
 
 
 import abc
+<<<<<<< HEAD
 import inspect
 from functools import partial
 from typing import Any, Callable, Protocol, Tuple, Union
+=======
+from typing import Any, Callable, Tuple, Union
+>>>>>>> refactor/organization
 
 import jax
 import jaxtyping
 from jax import numpy as jnp
 from jax.scipy.special import gammaln
 
+<<<<<<< HEAD
+=======
+from jax_russell.base import ValuationModel
+
+>>>>>>> refactor/organization
 
 # binomial as suggested here https://github.com/google/jax/discussions/7044
 def comb(
@@ -276,6 +285,7 @@ class AmericanDiscounter(Discounter):
         return values[0]
 
 
+<<<<<<< HEAD
 class ValuationModel(abc.ABC):
     """Abstract class for valuation methods."""
 
@@ -346,6 +356,8 @@ class ValuationModel(abc.ABC):
         )(*args, **kwargs)
 
 
+=======
+>>>>>>> refactor/organization
 class BinomialTree(ValuationModel):
     """Base abstract class for binomial trees."""
 
@@ -610,6 +622,7 @@ class RendlemanBartterBinomialTree(BinomialTree):
                 )
             )
         )
+<<<<<<< HEAD
 
 
 class ImplementsValueProtocol(Protocol):
@@ -769,3 +782,5 @@ class AsayMargineduturesOptionMixin:
             jnp.zeros(1),
             jnp.zeros(1),
         )
+=======
+>>>>>>> refactor/organization
