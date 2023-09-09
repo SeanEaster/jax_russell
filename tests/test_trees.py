@@ -5,15 +5,15 @@ from typing import Any
 import pytest
 from jax import numpy as jnp
 
-from jax_russell import trees
+from jax_russell import trees, base
 
 tree_classes = [trees.CRRBinomialTree, trees.RendlemanBartterBinomialTree]
 option_types = ["european", "american"]
 mixin_classes = [
-    trees.StockOptionMixin,
-    trees.FuturesOptionMixin,
-    trees.AsayMargineduturesOptionMixin,
-    trees.StockOptionContinuousDividendMixin,
+    base.StockOptionMixin,
+    base.FuturesOptionMixin,
+    base.AsayMargineduturesOptionMixin,
+    base.StockOptionContinuousDividendMixin,
 ]
 
 
