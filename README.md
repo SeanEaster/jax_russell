@@ -8,7 +8,7 @@
 
 
 
-Formulas to tell you when the price is right
+`jax-barker` is a 
 
 
 * Documentation: <https://SeanEaster.github.io/jax_russell>
