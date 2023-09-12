@@ -1,7 +1,7 @@
 [tool]
 [tool.poetry]
 name = "jax-russell"
-version = "0.1.0"
+version = "0.1.1"
 homepage = "https://github.com/SeanEaster/jax_russell"
 description = "Formulas to tell you when the price is right."
 authors = ["Sean Easter <sean@easter.ai>"]
