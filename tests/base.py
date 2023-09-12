@@ -51,3 +51,55 @@ haug_crr_full_values = jnp.array(
         [0.00000000, 0.00000000, 0.00000000, 0.00000000, 0.00000000, 32.77056503],
     ]
 )
+
+
+def expand_args_for_broadcasting(
+    expand_start_price,
+    expand_volatility,
+    expand_time_to_expiration,
+    expand_risk_free_rate,
+    expand_cost_of_carry,
+    expand_is_call,
+    expand_strike,
+    min_total_dims,
+):
+    expanded_inputs = []
+    whether_to_expand = [
+        expand_start_price,
+        expand_volatility,
+        expand_time_to_expiration,
+        expand_risk_free_rate,
+        expand_cost_of_carry,
+        expand_is_call,
+        expand_strike,
+    ]
+
+    total_dims = sum(whether_to_expand)
+    if total_dims < min_total_dims:
+        total_dims = min_total_dims
+
+    adjusted_idx = 0
+    expected_shape = []
+    for idx, (expand, haug_input) in enumerate(zip(whether_to_expand, haug_inputs)):
+        if not expand:
+            expanded_inputs.append(haug_input)
+            continue
+        if idx == 5:
+            expanded_dim_len = 2
+            expanded_shape = [2 if adjusted_idx == i else 1 for i in range(total_dims)]
+            expanded_input = jnp.arange(2, dtype=jnp.float32)
+        else:
+            expanded_dim_len = idx + 2
+            expanded_shape = [expanded_dim_len if adjusted_idx == i else 1 for i in range(total_dims)]
+            expanded_input = haug_input + jnp.linspace(0, 5e-1, expanded_dim_len)
+        expanded_input = expanded_input.reshape(expanded_shape)
+        expanded_inputs.append(expanded_input)
+
+        expected_shape.append(expanded_dim_len)
+        adjusted_idx += 1
+    if len(expected_shape) < min_total_dims:
+        expected_shape.append(1)
+    return expanded_inputs, expected_shape
+
+
+BOOL_LIST = [False, True]
