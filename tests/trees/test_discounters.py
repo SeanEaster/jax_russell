@@ -4,7 +4,7 @@ from jax_russell.trees import EuropeanDiscounter, AmericanDiscounter
 from tests.base import expand_args_for_broadcasting
 
 RB_FOUR_STEP_FINAL = jnp.array([190.61, 137.89, 99.75, 72.16, 52.20])
-RB_FOUR_STEP_EXPECTED = jnp.array([14.41])
+RB_FOUR_STEP_EXPECTED = jnp.array(14.41)
 
 RB_PRICE = jnp.array([100.0])
 RB_TTE = jnp.array([1.0])
@@ -33,6 +33,23 @@ def test_european_discounter():
 
 def test_european_discounter_expanded():
     """Test same example against expanded input."""
+    args = expand_args()
+
+    actual = EuropeanDiscounter()(
+        RB_FOUR_STEP_FINAL,
+        *args,
+        RB_END_PROBABILITIES,
+    )
+    assert jnp.allclose(
+        actual,
+        RB_FOUR_STEP_EXPECTED,
+        atol=1e-2,
+        rtol=1e-2,
+    )
+    assert actual.shape == RB_FOUR_STEP_EXPECTED.shape + (1,)
+
+
+def expand_args():
     args = tuple(
         [
             jnp.expand_dims(_, -1)
@@ -45,18 +62,19 @@ def test_european_discounter_expanded():
         ]
     )
     args = jnp.broadcast_arrays(*args)
-    print(args)
-    actual = EuropeanDiscounter()(
+    return args
+
+
+def test_american_discounter_expanded():
+    """Test EuropeanDiscounter against Rendleman Bartter (1979) example."""
+
+    args = expand_args()
+
+    actual = AmericanDiscounter(steps=4)(
         RB_FOUR_STEP_FINAL,
         *args,
-        RB_END_PROBABILITIES,
-    )
-    print(actual)
-    assert jnp.allclose(
-        actual,
-        RB_FOUR_STEP_EXPECTED,
-        atol=1e-2,
-        rtol=1e-2,
+        jnp.power(jnp.array([0.5]), 4),
+        jnp.array([1.175]),
     )
     assert actual.shape == RB_FOUR_STEP_EXPECTED.shape + (1,)
 
@@ -73,3 +91,26 @@ def test_american_discounter():
         jnp.array([1.175]),
     )
     assert actual.shape == RB_FOUR_STEP_EXPECTED.shape
+
+
+def test_shapes_match():
+    american_val = AmericanDiscounter(steps=4)(
+        RB_FOUR_STEP_FINAL,
+        RB_PRICE,
+        RB_TTE,
+        RB_RISK_FREE_RATE,
+        RB_IS_CALL,
+        jnp.power(jnp.array([0.5]), 4),
+        jnp.array([1.175]),
+    )
+
+    european_val = EuropeanDiscounter()(
+        RB_FOUR_STEP_FINAL,
+        RB_PRICE,
+        RB_TTE,
+        RB_RISK_FREE_RATE,
+        RB_IS_CALL,
+        RB_END_PROBABILITIES,
+    )
+
+    assert american_val.shape == european_val.shape

@@ -215,13 +215,24 @@ class EuropeanDiscounter(Discounter):
             jnp.array: discounted expected value of each contract at expiration
         """  # noqa
 
+        # return (
+        #     jnp.exp(-jnp.expand_dims(risk_free_rate, -1) * jnp.expand_dims(time_to_expiration, -1))
+        #     * end_probabilities
+        #     * self.exercise_valuer(
+        #         end_underlying_values,
+        #         jnp.expand_dims(strike, -1),
+        #         jnp.expand_dims(is_call, -1),
+        #     )
+        # ).sum(-1)
         return (
-            jnp.exp(-jnp.expand_dims(risk_free_rate, -1) * jnp.expand_dims(time_to_expiration, -1))
+            jnp.exp(-risk_free_rate * time_to_expiration)
             * end_probabilities
             * self.exercise_valuer(
                 end_underlying_values,
-                jnp.expand_dims(strike, -1),
-                jnp.expand_dims(is_call, -1),
+                strike,
+                is_call,
+                # jnp.expand_dims(strike, -1),
+                # jnp.expand_dims(is_call, -1),
             )
         ).sum(-1)
 
@@ -243,16 +254,17 @@ class AmericanDiscounter(Discounter):
         super().__init__(exercise_valuer)
         self.steps = steps
 
+    @typeguard.typechecked
     def __call__(
         self,
-        end_underlying_values: jaxtyping.Float[jaxtyping.Array, "*#contracts n"],
-        strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        p_up: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        up_factor: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "*#contracts"]:
+        end_underlying_values: jaxtyping.Float[jaxtyping.Array, "*contracts n"],
+        strike: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        is_call: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        p_up: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        up_factor: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+    ) -> jaxtyping.Float[jaxtyping.Array, "*contracts"]:
         """Calculate discounted value of an American option.
 
         Args:
@@ -292,7 +304,8 @@ class AmericanDiscounter(Discounter):
 
             values = jnp.maximum(discounted_value, values)
 
-        return values[..., 0]
+        # return values
+        return values[..., 0] if len(values.shape) != 0 else jnp.expand_dims(values, -1)
 
 
 class BinomialTree(ValuationModel):
@@ -387,14 +400,13 @@ class BinomialTree(ValuationModel):
         end_probabilities,
         end_underlying_values,
     ):
-        args_to_expand = (
+        args_to_expand = [
+            strike,
+            time_to_expiration,
+            risk_free_rate,
+            is_call,
+        ] + (
             [
-                strike,
-                time_to_expiration,
-                risk_free_rate,
-                is_call,
-            ]
-            + [
                 self._calc_transition_up_probabilities(
                     up_factors,
                     down_factors,
@@ -478,7 +490,6 @@ class CRRBinomialTree(BinomialTree):
             up_factors,
             down_factors,
         )
-        # print(up_factors.shape, end_probabilities.shape, end_underlying_values.shape)
 
         args = self._transform_args_for_discounter(
             time_to_expiration,
@@ -613,27 +624,27 @@ class RendlemanBartterBinomialTree(BinomialTree):
         )
         return self.discounter(*args)
 
-        # return self.discounter(
-        #     *tuple(
-        #         [
-        #             end_underlying_values,
-        #             strike,
-        #             time_to_expiration,
-        #             risk_free_rate,
-        #             is_call,
-        #         ]
-        #         + (
-        #             [
-        #                 self._calc_transition_up_probabilities(
-        #                     up_factors,
-        #                     down_factors,
-        #                     time_to_expiration,
-        #                     cost_of_carry,
-        #                 ),
-        #                 up_factors,
-        #             ]
-        #             if self.option_type == "american"
-        #             else [end_probabilities]
-        #         )
-        #     )
-        # )
+    # return self.discounter(
+    #     *tuple(
+    #         [
+    #             end_underlying_values,
+    #             strike,
+    #             time_to_expiration,
+    #             risk_free_rate,
+    #             is_call,
+    #         ]
+    #         + (
+    #             [
+    #                 self._calc_transition_up_probabilities(
+    #                     up_factors,
+    #                     down_factors,
+    #                     time_to_expiration,
+    #                     cost_of_carry,
+    #                 ),
+    #                 up_factors,
+    #             ]
+    #             if self.option_type == "american"
+    #             else [end_probabilities]
+    #         )
+    #     )
+    # )

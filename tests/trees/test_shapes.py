@@ -2,7 +2,7 @@
 import pytest
 from jax import numpy as jnp
 
-from tests.base import BOOL_LIST, expand_args_for_broadcasting
+from tests.base import BOOL_LIST, expand_args_for_broadcasting, option_types
 from tests.trees import tree_classes
 
 
@@ -15,6 +15,7 @@ from tests.trees import tree_classes
 @pytest.mark.parametrize("expand_strike", BOOL_LIST)
 @pytest.mark.parametrize("min_total_dims", [1, 2])
 @pytest.mark.parametrize("tree_class", tree_classes)
+@pytest.mark.parametrize("option_type", option_types)
 def test_expanded(
     expand_start_price,
     expand_volatility,
@@ -25,6 +26,7 @@ def test_expanded(
     expand_strike,
     min_total_dims,
     tree_class,
+    option_type,
 ):
     """Test broadcasting against single known example."""
     expanded_inputs, expected_shape = expand_args_for_broadcasting(
@@ -38,11 +40,8 @@ def test_expanded(
         min_total_dims,
     )
 
-    actual = tree_class(5, "american")(*expanded_inputs)
+    actual = tree_class(5, option_type)(*expanded_inputs)
     assert actual.shape == tuple(expected_shape)
-
-
-# BOOL_LIST = [True]
 
 
 @pytest.mark.parametrize("expand_start_price", BOOL_LIST)
