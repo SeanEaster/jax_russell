@@ -73,7 +73,7 @@ class ValuationModel(abc.ABC):
             jnp.array: option values
         """
         inspect.signature(self.value).bind(*args, **kwargs)
-        return self.value(*args, **kwargs)
+        return self.value(*jnp.broadcast_arrays(*args), **kwargs)
 
     @partial(jax.jit, static_argnums=0)
     def first_order(self, *args, **kwargs):
@@ -228,12 +228,27 @@ class StockOptionMixin:
         Returns:
             jnp.array: contract values
         """
+        (
+            start_price,
+            volatility,
+            time_to_expiration,
+            risk_free_rate,
+            is_call,
+            strike,
+        ) = jnp.broadcast_arrays(
+            start_price,
+            volatility,
+            time_to_expiration,
+            risk_free_rate,
+            is_call,
+            strike,
+        )
         return self.value(
             start_price,
             volatility,
             time_to_expiration,
+            risk_free_rate,
+            risk_free_rate,
             is_call,
             strike,
-            risk_free_rate,
-            risk_free_rate,
         )

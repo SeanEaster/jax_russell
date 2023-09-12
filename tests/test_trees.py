@@ -1,11 +1,10 @@
 """Tests for tree models."""
-# jax.config.update("jax_enable_x64", True)
 from typing import Any
 
 import pytest
 from jax import numpy as jnp
 
-from jax_russell import trees, base
+from jax_russell import base, trees
 
 tree_classes = [trees.CRRBinomialTree, trees.RendlemanBartterBinomialTree]
 option_types = ["european", "american"]
@@ -66,11 +65,6 @@ time_steps = trees.calc_time_steps(
 )
 
 
-# def test_calc_steps():
-#     print(time_steps)
-#     assert False
-
-
 num_samples = 4
 num_assets = 2
 
@@ -80,7 +74,6 @@ triu_indices = jnp.triu_indices(
     starts + 1,
     starts + 1,
 )
-# crr_tree = CRRBinomialTree(5, 0.08)
 
 haug_crr_full_sample = jnp.array(
     [

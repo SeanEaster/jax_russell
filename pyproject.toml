@@ -1,9 +1,9 @@
 [tool]
 [tool.poetry]
 name = "jax-russell"
-version = "0.1.0"
+version = "0.1.1"
 homepage = "https://github.com/SeanEaster/jax_russell"
-description = "Formulas to tell you when the price is right."
+description = "Formulas to price options."
 authors = ["Sean Easter <sean@easter.ai>"]
 readme = "README.md"
 license = "GPL-3.0-only"
@@ -27,7 +27,7 @@ jaxtyping = ">=0.2.1,<1"
 jax = ">=0.4.14,<1"
 jaxlib = ">=0.4.14,<1"
 pymdown-extensions = "^9.4"
-typeguard = ">=4.1.2,<5"
+typeguard = ">=4.1.2,<4.1.4"
 
 black = { version = "^23.7.0", optional = true }
 isort = { version = "^5.8.0", optional = true }

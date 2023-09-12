@@ -1,9 +1,7 @@
 """Test all valuation classes with all mixins first order greeks."""
-from tests.base import mixin_call_args, mixin_classes, option_types
-
-
 import pytest
 
+from tests.base import mixin_call_args, mixin_classes, option_types
 from tests.trees import tree_classes
 
 
