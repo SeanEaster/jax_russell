@@ -1,8 +1,7 @@
 """Test combinatorial function."""
-from jax_russell import trees
-
-
 from jax import numpy as jnp
+
+from jax_russell import trees
 
 
 def test_comb():

@@ -1,18 +1,9 @@
-import jax
+"""Test option value functions against example cases."""
 import pytest
 from jax import numpy as jnp
 
 from jax_russell import base, trees
-from tests.base import haug_crr_full_values, haug_inputs, option_types
-
-# jax.config.update("jax_enable_x64", True)
-
-
-# def test_haug():
-#     """Test American tree against textbook example."""
-#     actual = trees.CRRBinomialTree(5, "american")(*haug_inputs)
-#     assert jnp.allclose(actual, haug_crr_full_values[0, 0])
-
+from tests.base import option_types
 
 rb_steps = [12, 52, 100]
 rb_expected = {
@@ -29,12 +20,6 @@ rb_expected = {
 }
 
 
-def test_calc_end_probabilities():
-    actual = trees.RendlemanBartterBinomialTree(4, "european")._calc_end_probabilities(jnp.ones(3).reshape(-1, 1))
-    print(actual)
-    # assert False
-
-
 @pytest.mark.parametrize("steps", rb_steps)
 @pytest.mark.parametrize("option_type", option_types)
 def test_rb(steps, option_type):
@@ -43,7 +28,6 @@ def test_rb(steps, option_type):
     rb_volatility = jnp.array([0.324])
     rb_time_to_expiration = jnp.array([1.0])
     rb_risk_free_rate = jnp.exp(jnp.array([0.05])) - 1
-    # rb_risk_free_rate = jnp.array([0.05])
     rb_is_call = jnp.array([0.0])
     rb_strike = jnp.expand_dims(jnp.array([75.0, 100.0, 125.0]), -1)
 

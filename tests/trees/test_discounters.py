@@ -1,7 +1,7 @@
+"""Test Discounter classes for shapes and values."""
 from jax import numpy as jnp
 
-from jax_russell.trees import EuropeanDiscounter, AmericanDiscounter
-from tests.base import expand_args_for_broadcasting
+from jax_russell.trees import AmericanDiscounter, EuropeanDiscounter
 
 RB_FOUR_STEP_FINAL = jnp.array([190.61, 137.89, 99.75, 72.16, 52.20])
 RB_FOUR_STEP_EXPECTED = jnp.array(14.41)
@@ -50,6 +50,7 @@ def test_european_discounter_expanded():
 
 
 def expand_args():
+    """Expand dimensions of Rendleman Bartter inputs."""
     args = tuple(
         [
             jnp.expand_dims(_, -1)
@@ -67,7 +68,6 @@ def expand_args():
 
 def test_american_discounter_expanded():
     """Test EuropeanDiscounter against Rendleman Bartter (1979) example."""
-
     args = expand_args()
 
     actual = AmericanDiscounter(steps=4)(
@@ -94,6 +94,7 @@ def test_american_discounter():
 
 
 def test_shapes_match():
+    """Test that American, European discounters return same shapes for same inputs."""
     american_val = AmericanDiscounter(steps=4)(
         RB_FOUR_STEP_FINAL,
         RB_PRICE,

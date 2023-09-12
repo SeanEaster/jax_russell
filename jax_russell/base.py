@@ -228,7 +228,6 @@ class StockOptionMixin:
         Returns:
             jnp.array: contract values
         """
-
         (
             start_price,
             volatility,

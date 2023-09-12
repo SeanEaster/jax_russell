@@ -63,6 +63,11 @@ def expand_args_for_broadcasting(
     expand_strike,
     min_total_dims,
 ):
+    """Expand Haug case inputs to test broadcasting behavior.
+
+    Returns:
+        tuple: arguments with added dimenstion, expected return shape
+    """
     expanded_inputs = []
     whether_to_expand = [
         expand_start_price,

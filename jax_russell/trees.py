@@ -15,9 +15,9 @@ from jax_russell.base import ValuationModel
 
 # binomial as suggested here https://github.com/google/jax/discussions/7044
 def comb(
-    N: jaxtyping.Float[jaxtyping.Array, "*"],
-    k: jaxtyping.Float[jaxtyping.Array, "*"],
-) -> jaxtyping.Float[jaxtyping.Array, "*"]:
+    N: Union[int, float, jaxtyping.Float[jaxtyping.Array, "*"]],
+    k: Union[int, float, jaxtyping.Float[jaxtyping.Array, "*"]],
+) -> Union[float, jaxtyping.Float[jaxtyping.Array, "*"]]:
     """Jax-friendly implementation of the binomial coefficient.
 
     Returns:
@@ -90,8 +90,6 @@ class ExerciseValuer(abc.ABC):
         strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
     ) -> jaxtyping.Float[jaxtyping.Array, "*#contracts"]:
-        # underlying_values, strike, is_call = jnp.broadcast_arrays(underlying_values, strike, is_call)
-        # return (underlying_values - jnp.expand_dims(strike, -1)) * (2 * jnp.expand_dims(is_call, -1) - 1)
         return (underlying_values - strike) * (2 * is_call - 1)
 
     @abc.abstractmethod
@@ -215,15 +213,6 @@ class EuropeanDiscounter(Discounter):
             jnp.array: discounted expected value of each contract at expiration
         """  # noqa
 
-        # return (
-        #     jnp.exp(-jnp.expand_dims(risk_free_rate, -1) * jnp.expand_dims(time_to_expiration, -1))
-        #     * end_probabilities
-        #     * self.exercise_valuer(
-        #         end_underlying_values,
-        #         jnp.expand_dims(strike, -1),
-        #         jnp.expand_dims(is_call, -1),
-        #     )
-        # ).sum(-1)
         return (
             jnp.exp(-risk_free_rate * time_to_expiration)
             * end_probabilities
@@ -231,8 +220,6 @@ class EuropeanDiscounter(Discounter):
                 end_underlying_values,
                 strike,
                 is_call,
-                # jnp.expand_dims(strike, -1),
-                # jnp.expand_dims(is_call, -1),
             )
         ).sum(-1)
 
@@ -264,7 +251,7 @@ class AmericanDiscounter(Discounter):
         is_call: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
         p_up: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
         up_factor: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "*contracts"]:
+    ) -> jaxtyping.Float[jaxtyping.Array, "*contracts"]:  # noqa
         """Calculate discounted value of an American option.
 
         Args:
@@ -285,8 +272,6 @@ class AmericanDiscounter(Discounter):
             underlying_values,
             strike,
             is_call,
-            # jnp.expand_dims(strike, -1),
-            # jnp.expand_dims(is_call, -1),
         )
         while values.shape[-1] > 1:
             discounted_value = jnp.exp(-risk_free_rate * delta_t) * (
@@ -298,13 +283,10 @@ class AmericanDiscounter(Discounter):
                 underlying_values,
                 strike,
                 is_call,
-                # jnp.expand_dims(strike, -1),
-                # jnp.expand_dims(is_call, -1),
             )
 
             values = jnp.maximum(discounted_value, values)
 
-        # return values
         return values[..., 0] if len(values.shape) != 0 else jnp.expand_dims(values, -1)
 
 
@@ -352,12 +334,6 @@ class BinomialTree(ValuationModel):
         Returns:
             jnp.array: array with possible values of each contract in the last dimension
         """
-        # up_steps = jnp.arange(self.steps + 1).reshape(
-        #     (
-        #         -1,
-        #         *(1 for _ in range(len(up_factors.shape))),
-        #     )
-        # )
         up_steps = jnp.arange(self.steps + 1)
 
         return jnp.exp(
@@ -425,25 +401,6 @@ class BinomialTree(ValuationModel):
         )
 
         return args
-
-        # return self.discounter(
-        #     *tuple(
-        #         args_to_expand
-        #         + (
-        #             [
-        #                 self._calc_transition_up_probabilities(
-        #                     up_factors,
-        #                     down_factors,
-        #                     time_to_expiration,
-        #                     cost_of_carry,
-        #                 ),
-        #                 up_factors,
-        #             ]
-        #             if self.option_type == "american"
-        #             else [end_probabilities]
-        #         )
-        #     )
-        # )
 
 
 class CRRBinomialTree(BinomialTree):
@@ -623,28 +580,3 @@ class RendlemanBartterBinomialTree(BinomialTree):
             end_underlying_values,
         )
         return self.discounter(*args)
-
-    # return self.discounter(
-    #     *tuple(
-    #         [
-    #             end_underlying_values,
-    #             strike,
-    #             time_to_expiration,
-    #             risk_free_rate,
-    #             is_call,
-    #         ]
-    #         + (
-    #             [
-    #                 self._calc_transition_up_probabilities(
-    #                     up_factors,
-    #                     down_factors,
-    #                     time_to_expiration,
-    #                     cost_of_carry,
-    #                 ),
-    #                 up_factors,
-    #             ]
-    #             if self.option_type == "american"
-    #             else [end_probabilities]
-    #         )
-    #     )
-    # )

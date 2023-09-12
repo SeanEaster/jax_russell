@@ -1,10 +1,8 @@
 """Test all valuation classes with all mixins, valuers second order greeks."""
-from jax_russell import trees
-from tests.base import mixin_call_args, mixin_classes, option_types
-
-
 import pytest
 
+from jax_russell import trees
+from tests.base import mixin_call_args, mixin_classes, option_types
 from tests.trees import tree_classes
 
 
