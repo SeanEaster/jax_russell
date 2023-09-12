@@ -8,7 +8,9 @@
 
 
 
-`jax-barker` is a 
+`jax-rusell` is a package that implements financial option formulas, and leverages Jax's autodifferentiation to support calculating "the greeks." 
+
+Formulas are generally taken from Espen Haug's _The Complete Guide to Option Pricing Formulas_.
 
 
 * Documentation: <https://SeanEaster.github.io/jax_russell>
@@ -19,7 +21,13 @@
 
 ## Features
 
-* TODO
+* Classes implementing standard tree methods, like Cox-Ross-Rubinstein and Rendleman Bartter
+
+### Planned
+
+- Black Scholes and variations
+- More comprehensive testing
+
 
 ## Credits
 

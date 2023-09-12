@@ -7,6 +7,16 @@ You can contribute in many ways:
 
 ## Types of Contributions
 
+### Share Test Cases
+
+If you're aware of a published source example option values or greeks, they could be very helpful in improving jax_russell testing. If sharing, please include:
+
+* A link, if openly available; else, title and authors.
+* A summary of the methods discussed in the source.
+* Any details that might be helpful in leveraging the resource to improve tests.
+
+Share these resources at https://github.com/SeanEaster/jax_russell/issues.
+
 ### Report Bugs
 
 Report bugs at https://github.com/SeanEaster/jax_russell/issues.
