@@ -40,6 +40,7 @@ class ValuationModel(abc.ABC):
     argnums = list(range(4))
 
     @abc.abstractmethod
+    @partial(jax.jit, static_argnums=0)
     def value(
         self,
         start_price: jaxtyping.Float[
@@ -60,6 +61,7 @@ class ValuationModel(abc.ABC):
         In these cases, this allows the single, general method `value()` to implement valuations, while leveraging `__call__()` for security-specific argument logic and meaningful autodifferentiation.
         """  # noqa
 
+    @partial(jax.jit, static_argnums=0)
     def __call__(
         self,
         *args: Any,

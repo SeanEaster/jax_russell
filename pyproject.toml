@@ -3,7 +3,7 @@
 name = "jax-russell"
 version = "0.1.1"
 homepage = "https://github.com/SeanEaster/jax_russell"
-description = "Formulas to price options."
+description = "Financial options valuations and auto-diffed risk measures (\"greeks\" in Jax."
 authors = ["Sean Easter <sean@easter.ai>"]
 readme = "README.md"
 license = "GPL-3.0-only"

@@ -2,6 +2,7 @@
 
 
 import abc
+from functools import partial
 from typing import Any, Callable, Tuple, Union
 
 import jax
@@ -410,6 +411,7 @@ class CRRBinomialTree(BinomialTree):
 
     """  # noqa
 
+    @partial(jax.jit, static_argnums=0)
     @typeguard.typechecked
     def value(
         self,
@@ -474,6 +476,7 @@ class CRRBinomialTree(BinomialTree):
         scaled_volatility = volatility * jnp.sqrt(time_to_expiration / self.steps)
         return jnp.exp(scaled_volatility), jnp.exp(-scaled_volatility)
 
+    @partial(jax.jit, static_argnums=0)
     @typeguard.typechecked
     def _calc_end_probabilities(
         self,
@@ -541,6 +544,7 @@ class RendlemanBartterBinomialTree(BinomialTree):
         const = (cost_of_carry - jnp.power(volatility, 2.0) / 2.0) * delta_t
         return jnp.exp(const + scaled_volatility), jnp.exp(const - scaled_volatility)
 
+    @partial(jax.jit, static_argnums=0)
     def value(
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
