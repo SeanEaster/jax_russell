@@ -405,10 +405,9 @@ class BinomialTree(ValuationModel):
 
 
 class CRRBinomialTree(BinomialTree):
-    """Base class for binomial trees.
+    """Cox Ross Rubinstein binomial tree.
 
-    ``jax_russell.BinomialTree`` houses operations common across various flavors of pricing models that employ binomial trees. For example, both European and American stock options TK
-
+    `__call__()` is tested against example in Haug.
     """  # noqa
 
     @partial(jax.jit, static_argnums=0)
@@ -507,7 +506,10 @@ class CRRBinomialTree(BinomialTree):
 
 
 class RendlemanBartterBinomialTree(BinomialTree):
-    """Rendleman Bartter tree method (equal probability of upward and downward movement)."""
+    """Rendleman Bartter tree method (equal probability of upward and downward movement).
+
+    `__call__()` is tested to within 3e-2 (absolute and relative tolerance) of published results.
+    """
 
     def _calc_end_probabilities(
         self,

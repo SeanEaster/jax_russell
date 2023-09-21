@@ -12,6 +12,8 @@
 
 Formulas are generally taken from Espen Haug's _The Complete Guide to Option Pricing Formulas_.
 
+**Pre-alpha, API unstable.**
+
 
 * Documentation: <https://SeanEaster.github.io/jax_russell>
 * GitHub: <https://github.com/SeanEaster/jax_russell>
@@ -22,6 +24,9 @@ Formulas are generally taken from Espen Haug's _The Complete Guide to Option Pri
 ## Features
 
 * Classes implementing standard tree methods, like Cox-Ross-Rubinstein and Rendleman Bartter
+* First- and second-order risk measures ("the greeks") via auto-differentiation
+* Support for options on stocks, stocks with continuous dividend, futures and margined futures (see the section "Usage")
+
 
 ### Planned
 

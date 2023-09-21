@@ -4,7 +4,7 @@
 import abc
 import inspect
 from functools import partial
-from typing import Any, Protocol
+from typing import Protocol
 
 import jax
 import jaxtyping
@@ -37,7 +37,7 @@ class ImplementsValueProtocol(Protocol):
 class ValuationModel(abc.ABC):
     """Abstract class for valuation methods."""
 
-    argnums = list(range(4))
+    argnums = list(range(5))
 
     @abc.abstractmethod
     @partial(jax.jit, static_argnums=0)
@@ -62,11 +62,7 @@ class ValuationModel(abc.ABC):
         """  # noqa
 
     @partial(jax.jit, static_argnums=0)
-    def __call__(
-        self,
-        *args: Any,
-        **kwargs: Any,
-    ) -> jaxtyping.Float[jaxtyping.Array, "#contracts"]:
+    def __call__(self, *args, **kwargs):
         """Value arrays of options.
 
         By default, `__call__` checks its arguments against `value()` and passes them through.
@@ -88,7 +84,7 @@ class ValuationModel(abc.ABC):
         return jnp.hstack(
             jax.jacfwd(
                 self,
-                self.argnums,
+                range(len(args)) if self.argnums is None else self.argnums,
             )(*args, **kwargs)
         )
 
@@ -102,12 +98,15 @@ class ValuationModel(abc.ABC):
         inspect.signature(self).bind(*args, **kwargs)
         return jax.jacfwd(
             self.first_order,
-            self.argnums,
+            range(len(args)) if self.argnums is None else self.argnums,
+            # self.argnums,
         )(*args, **kwargs)
 
 
 class AsayMargineduturesOptionMixin:
     """Assumes zero interest and zero cost of carry."""
+
+    argnums = list(range(3))
 
     def __call__(
         self: ImplementsValueProtocol,
@@ -139,7 +138,9 @@ class AsayMargineduturesOptionMixin:
 
 
 class FuturesOptionMixin:
-    """Assume zero cost of carry."""
+    """Assumes zero cost of carry."""
+
+    argnums = list(range(4))
 
     def __call__(
         self: ImplementsValueProtocol,
@@ -173,6 +174,8 @@ class FuturesOptionMixin:
 
 class StockOptionContinuousDividendMixin:
     """Adjust a stock option by a continuous dividend."""
+
+    argnums = list(range(5))
 
     def __call__(
         self: ImplementsValueProtocol,
@@ -210,6 +213,8 @@ class StockOptionMixin:
 
     This gives the correct rho, and is the cost of carry defined in Haug.
     """
+
+    argnums = list(range(4))
 
     def __call__(
         self: ImplementsValueProtocol,
