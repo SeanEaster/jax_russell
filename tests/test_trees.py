@@ -1,19 +1,16 @@
 """Tests for tree models."""
-from typing import Any
 
 import pytest
 from jax import numpy as jnp
 
-from jax_russell import base, trees
+from jax_russell import trees
+from tests.base import mixin_classes
 
-tree_classes = [trees.CRRBinomialTree, trees.RendlemanBartterBinomialTree]
-option_types = ["european", "american"]
-mixin_classes = [
-    base.StockOptionMixin,
-    base.FuturesOptionMixin,
-    base.AsayMargineduturesOptionMixin,
-    base.StockOptionContinuousDividendMixin,
+tree_classes = [
+    trees.CRRBinomialTree,
+    trees.RendlemanBartterBinomialTree,
 ]
+option_types = ["european", "american"]
 
 
 haug_start_price = jnp.array([100.0])
@@ -90,7 +87,7 @@ def test_haug():
 
 @pytest.mark.parametrize("tree_class", tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
-def test_call(tree_class: Any, option_type: str):
+def test_call(tree_class, option_type: str):
     """Test instantiation and call for all tree classes and option types.
 
     Args:
