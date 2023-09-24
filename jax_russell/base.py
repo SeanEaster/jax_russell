@@ -106,7 +106,6 @@ class ValuationModel(abc.ABC):
             axis=-1,
         )
 
-    @partial(jax.jit, static_argnums=0)
     def solve_implied(
         self,
         expected_option_values,
