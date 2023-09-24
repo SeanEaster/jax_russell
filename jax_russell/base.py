@@ -9,6 +9,7 @@ from typing import Protocol
 import jax
 import jaxtyping
 from jax import numpy as jnp
+import jaxopt
 
 
 class ImplementsValueProtocol(Protocol):
@@ -96,11 +97,38 @@ class ValuationModel(abc.ABC):
             _type_: _description_
         """
         inspect.signature(self).bind(*args, **kwargs)
-        return jax.jacfwd(
-            self.first_order,
-            range(len(args)) if self.argnums is None else self.argnums,
-            # self.argnums,
-        )(*args, **kwargs)
+        return jnp.concatenate(
+            jax.jacfwd(
+                self.first_order,
+                range(len(args)) if self.argnums is None else self.argnums,
+                # self.argnums,
+            )(*args, **kwargs),
+            axis=-1,
+        )
+
+    @partial(jax.jit, static_argnums=0)
+    def solve_implied(
+        self,
+        expected_option_values,
+        param_index,
+        init_params,
+        *args,
+        **kwargs,
+    ):
+        def objective(params, expected):
+            args_list = list(args)
+            call_args = []
+            for i in range(len(args) + 1):
+                if i == param_index:
+                    call_args.append(params)
+                else:
+                    call_args.append(args_list.pop(0))
+            residuals = expected - self(*call_args, **kwargs)
+            return jnp.mean(residuals**2)
+
+        solver = jaxopt.LBFGS(objective)
+        res = solver.run(init_params, expected=expected_option_values)
+        return res
 
 
 class AsayMargineduturesOptionMixin:

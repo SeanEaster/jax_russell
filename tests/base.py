@@ -21,6 +21,7 @@ haug_inputs = (
     haug_is_call,
     haug_strike,
 )
+a = (haug_start_price, haug_time_to_expiration, haug_risk_free_rate, haug_is_call, haug_strike)
 mixin_call_args = [
     (haug_start_price, haug_volatility, haug_time_to_expiration, haug_risk_free_rate, haug_is_call, haug_strike),
     (haug_start_price, haug_volatility, haug_time_to_expiration, haug_risk_free_rate, haug_is_call, haug_strike),
