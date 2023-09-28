@@ -1,6 +1,7 @@
 """Value tests for BSM models."""
 
 import jax.numpy as jnp
+
 from jax_russell import StockOptionBSM
 
 haug_bsm_start_price = jnp.array([60.0])

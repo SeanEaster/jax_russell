@@ -6,7 +6,7 @@ To use jax_russell in a project
 import jax_russell
 ```
 
-For example, this computes the value of an option given in _The Complete Guide to Option Pricing Formulas_:
+For example, this computes the value of an example option given in _The Complete Guide to Option Pricing Formulas_:
 
 ```
 from jax import numpy as jnp
@@ -42,6 +42,6 @@ Vega, rho report the change resulting from a full-unit change in volatility, int
 Likewise, the returned theta value is reported per year. Typically, theta is reported per trading day, so the value given by `first_order()` will require adjustment to match what you see in trading platforms.
 
 In the example above, five is an impractically small number of steps.
-As of this writing, [Interactive Brokers reports implied volatility using a 100-step tree](https://www.interactivebrokers.com/en/general/education/pdfnotes/PDF-OIR.php).
+As of this writing (Sept. 2023), [Interactive Brokers reports implied volatility using a 100-step tree](https://www.interactivebrokers.com/en/general/education/pdfnotes/PDF-OIR.php).
 Because `__call__()`, `first_order()` and `second_order()` are just-in-time compiled, steps values of this magnitude can make for a long first call to these methods. 
 Subsequent calls are speedy.

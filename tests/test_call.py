@@ -2,6 +2,7 @@
 from typing import Any
 
 import pytest
+from jax import numpy as jnp
 
 from tests.base import haug_inputs, option_types
 from tests.trees import tree_classes
@@ -16,4 +17,4 @@ def test_call(tree_class: Any, option_type: str):
         tree_class (Any): tree class to test
         option_type (str): 'american' or 'european'
     """
-    tree_class(5, option_type)(*haug_inputs)
+    assert jnp.greater(tree_class(5, option_type)(*haug_inputs), 0.0)

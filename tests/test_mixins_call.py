@@ -1,5 +1,6 @@
 """Test all valuation classes with all mixins."""
 import pytest
+from jax import numpy as jnp
 
 from jax_russell.bsm import GeneralizedBlackScholesMerten
 from tests.base import mixin_call_args, mixin_classes, option_types
@@ -27,7 +28,7 @@ def test_mixins_call(
     class UnderTest(mixin_class, tree_class):
         pass
 
-    UnderTest(5, option_type)(*mixin_call_args)
+    assert jnp.greater(UnderTest(5, option_type)(*mixin_call_args), 0.0)
 
 
 @pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
@@ -47,4 +48,4 @@ def test_mixins_call_bsm(
     class UnderTest(mixin_class, GeneralizedBlackScholesMerten):
         pass
 
-    UnderTest()(*mixin_call_args)
+    assert jnp.greater(UnderTest()(*mixin_call_args), 0.0)

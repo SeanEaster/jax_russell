@@ -7,9 +7,9 @@ from functools import partial
 from typing import Protocol
 
 import jax
+import jaxopt
 import jaxtyping
 from jax import numpy as jnp
-import jaxopt
 
 
 class ImplementsValueProtocol(Protocol):
@@ -109,24 +109,37 @@ class ValuationModel(abc.ABC):
     def solve_implied(
         self,
         expected_option_values,
-        param_index,
         init_params,
-        *args,
         **kwargs,
     ):
-        def objective(params, expected):
-            args_list = list(args)
-            call_args = []
-            for i in range(len(args) + 1):
-                if i == param_index:
-                    call_args.append(params)
-                else:
-                    call_args.append(args_list.pop(0))
-            residuals = expected - self(*call_args, **kwargs)
+        """Solve for an implied value, usually volatility.
+
+        This method allows the flexibility to solve for any combination of values used in the valuation method's `__call__()` signature.
+        For example, passing `{"risk_free_rate": jnp.array([0.05]),"volatility":jnp.array([.5])}` will solve for the implied values of both volatility and the risk free rate.
+
+        Args:
+            expected_option_values jnp.array: option values, typically observed market prices
+            init_params dict[jnp.array]: initial guesses to begin solve optimization
+
+        Returns:
+            params, state: the parameters and state returned by a `jaxopt` optimizer `run()`
+        """  # noqa: E501
+        signature = inspect.signature(self.__call__)
+        # inspect signature using bind to make sure all args have been passed
+        signature.bind(**{**init_params, **kwargs})
+
+        @jax.jit
+        def objective(params, expected, kwargs):
+            bound_arguments = signature.bind(**{**params, **kwargs})
+            residuals = expected - self(*bound_arguments.args, **bound_arguments.kwargs)
             return jnp.mean(residuals**2)
 
-        solver = jaxopt.LBFGS(objective)
-        res = solver.run(init_params, expected=expected_option_values)
+        solver = jaxopt.BFGS(objective)
+        res = solver.run(
+            init_params,
+            expected=expected_option_values,
+            kwargs=kwargs,
+        )
         return res
 
 
@@ -157,10 +170,10 @@ class AsayMargineduturesOptionMixin:
             start_price,
             volatility,
             time_to_expiration,
+            jnp.zeros(1),
+            jnp.zeros(1),
             is_call,
             strike,
-            jnp.zeros(1),
-            jnp.zeros(1),
         )
 
 
@@ -192,10 +205,10 @@ class FuturesOptionMixin:
             start_price,
             volatility,
             time_to_expiration,
-            is_call,
-            strike,
             risk_free_rate,
             jnp.zeros(risk_free_rate.shape),
+            is_call,
+            strike,
         )
 
 
@@ -228,10 +241,10 @@ class StockOptionContinuousDividendMixin:
             start_price,
             volatility,
             time_to_expiration,
-            is_call,
-            strike,
             risk_free_rate,
             risk_free_rate - continuous_dividend,
+            is_call,
+            strike,
         )
 
 
