@@ -2,7 +2,7 @@
 
 __author__ = """Sean Easter"""
 __email__ = 'sean@easter.ai'
-__version__ = '0.1.1'
+__version__ = '0.2.0'
 
 
 from jax_russell.base import StockOptionContinuousDividendMixin, StockOptionMixin, ValuationModel
