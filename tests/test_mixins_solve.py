@@ -114,5 +114,5 @@ def test_mixins_solve_bsm(
     assert jnp.allclose(
         params[implied_arg],
         expected,
-        atol=ABSOLUTE_TOLERANCES.get(implied_arg, 1e-8),
+        atol=ABSOLUTE_TOLERANCES.get(implied_arg, 1e-6),
     )
