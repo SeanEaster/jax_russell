@@ -65,7 +65,8 @@ def test_mixins_solve(
     )
     # todo: update to just test output of solved output against expected
 
-    # todo: this should try this for implied volatility, and if it fails try the same test with the negative of the implied volatility
+    # try this for implied volatility, and if it
+    # fails try the same test with the negative of the implied volatility
     try:
         assert jnp.allclose(
             params[implied_arg],
