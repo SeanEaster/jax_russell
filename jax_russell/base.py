@@ -4,9 +4,10 @@
 import abc
 import inspect
 from functools import partial
-from typing import Any, Protocol
+from typing import Protocol
 
 import jax
+import jaxopt
 import jaxtyping
 from jax import numpy as jnp
 
@@ -37,9 +38,10 @@ class ImplementsValueProtocol(Protocol):
 class ValuationModel(abc.ABC):
     """Abstract class for valuation methods."""
 
-    argnums = list(range(4))
+    argnums = list(range(5))
 
     @abc.abstractmethod
+    @partial(jax.jit, static_argnums=0)
     def value(
         self,
         start_price: jaxtyping.Float[
@@ -60,11 +62,8 @@ class ValuationModel(abc.ABC):
         In these cases, this allows the single, general method `value()` to implement valuations, while leveraging `__call__()` for security-specific argument logic and meaningful autodifferentiation.
         """  # noqa
 
-    def __call__(
-        self,
-        *args: Any,
-        **kwargs: Any,
-    ) -> jaxtyping.Float[jaxtyping.Array, "#contracts"]:
+    @partial(jax.jit, static_argnums=0)
+    def __call__(self, *args, **kwargs):
         """Value arrays of options.
 
         By default, `__call__` checks its arguments against `value()` and passes them through.
@@ -86,7 +85,7 @@ class ValuationModel(abc.ABC):
         return jnp.hstack(
             jax.jacfwd(
                 self,
-                self.argnums,
+                range(len(args)) if self.argnums is None else self.argnums,
             )(*args, **kwargs)
         )
 
@@ -98,14 +97,58 @@ class ValuationModel(abc.ABC):
             _type_: _description_
         """
         inspect.signature(self).bind(*args, **kwargs)
-        return jax.jacfwd(
-            self.first_order,
-            self.argnums,
-        )(*args, **kwargs)
+        return jnp.concatenate(
+            jax.jacfwd(
+                self.first_order,
+                range(len(args)) if self.argnums is None else self.argnums,
+                # self.argnums,
+            )(*args, **kwargs),
+            axis=-1,
+        )
+
+    def solve_implied(
+        self,
+        expected_option_values,
+        init_params,
+        **kwargs,
+    ):
+        """Solve for an implied value, usually volatility.
+
+        This method allows the flexibility to solve for any combination of values used in the valuation method's `__call__()` signature.
+        For example, passing `{"risk_free_rate": jnp.array([0.05]),"volatility":jnp.array([.5])}` will solve for the implied values of both volatility and the risk free rate.
+
+        Args:
+            expected_option_values jnp.array: option values, typically observed market prices
+            init_params dict[jnp.array]: initial guesses to begin solve optimization
+
+        Returns:
+            params, state: the parameters and state returned by a `jaxopt` optimizer `run()`
+        """  # noqa: E501
+        signature = inspect.signature(self.__call__)
+        # inspect signature using bind to make sure all args have been passed
+        signature.bind(**{**init_params, **kwargs})
+
+        @jax.jit
+        def objective(params, expected, kwargs):
+            bound_arguments = signature.bind(**{**params, **kwargs})
+            residuals = expected - self(*bound_arguments.args, **bound_arguments.kwargs)
+            return jnp.mean(residuals**2)
+
+        solver = jaxopt.BFGS(
+            objective,
+        )
+        res = solver.run(
+            init_params,
+            expected=expected_option_values,
+            kwargs=kwargs,
+        )
+        return res
 
 
 class AsayMargineduturesOptionMixin:
     """Assumes zero interest and zero cost of carry."""
+
+    argnums = list(range(3))
 
     def __call__(
         self: ImplementsValueProtocol,
@@ -129,15 +172,17 @@ class AsayMargineduturesOptionMixin:
             start_price,
             volatility,
             time_to_expiration,
+            jnp.zeros(1),
+            jnp.zeros(1),
             is_call,
             strike,
-            jnp.zeros(1),
-            jnp.zeros(1),
         )
 
 
 class FuturesOptionMixin:
-    """Assume zero cost of carry."""
+    """Assumes zero cost of carry."""
+
+    argnums = list(range(4))
 
     def __call__(
         self: ImplementsValueProtocol,
@@ -162,15 +207,17 @@ class FuturesOptionMixin:
             start_price,
             volatility,
             time_to_expiration,
-            is_call,
-            strike,
             risk_free_rate,
             jnp.zeros(risk_free_rate.shape),
+            is_call,
+            strike,
         )
 
 
 class StockOptionContinuousDividendMixin:
     """Adjust a stock option by a continuous dividend."""
+
+    argnums = list(range(5))
 
     def __call__(
         self: ImplementsValueProtocol,
@@ -196,10 +243,10 @@ class StockOptionContinuousDividendMixin:
             start_price,
             volatility,
             time_to_expiration,
-            is_call,
-            strike,
             risk_free_rate,
             risk_free_rate - continuous_dividend,
+            is_call,
+            strike,
         )
 
 
@@ -208,6 +255,8 @@ class StockOptionMixin:
 
     This gives the correct rho, and is the cost of carry defined in Haug.
     """
+
+    argnums = list(range(4))
 
     def __call__(
         self: ImplementsValueProtocol,

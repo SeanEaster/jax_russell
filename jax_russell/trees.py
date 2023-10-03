@@ -2,6 +2,7 @@
 
 
 import abc
+from functools import partial
 from typing import Any, Callable, Tuple, Union
 
 import jax
@@ -273,19 +274,29 @@ class AmericanDiscounter(Discounter):
             strike,
             is_call,
         )
-        while values.shape[-1] > 1:
+
+        def next_value(_, values_tuple):
+            values, underlying_values = values_tuple
             discounted_value = jnp.exp(-risk_free_rate * delta_t) * (
                 (1 - p_up) * values[..., :-1] + p_up * values[..., 1:]
             )
-
-            underlying_values = underlying_values[..., :-1] * up_factor
-            values = self.exercise_valuer(
-                underlying_values,
-                strike,
-                is_call,
+            underlying_values = underlying_values * up_factor
+            values = values.at[..., :-1].set(
+                self.exercise_valuer(
+                    underlying_values[..., :-1],
+                    strike,
+                    is_call,
+                )
             )
+            values = values.at[..., :-1].set(
+                jnp.maximum(
+                    discounted_value,
+                    values[..., :-1],
+                )
+            )
+            return values, underlying_values
 
-            values = jnp.maximum(discounted_value, values)
+        values, underlying_values = jax.lax.fori_loop(0, self.steps, next_value, (values, underlying_values))
 
         return values[..., 0] if len(values.shape) != 0 else jnp.expand_dims(values, -1)
 
@@ -404,19 +415,16 @@ class BinomialTree(ValuationModel):
 
 
 class CRRBinomialTree(BinomialTree):
-    """Base class for binomial trees.
+    """Cox Ross Rubinstein binomial tree.
 
-    ``jax_russell.BinomialTree`` houses operations common across various flavors of pricing models that employ binomial trees. For example, both European and American stock options TK
-
+    `__call__()` is tested against example in Haug.
     """  # noqa
 
+    @partial(jax.jit, static_argnums=0)
     @typeguard.typechecked
     def value(
         self,
-        start_price: jaxtyping.Float[
-            jaxtyping.Array,
-            "*#contracts",
-        ],
+        start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         volatility: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
@@ -439,8 +447,6 @@ class CRRBinomialTree(BinomialTree):
             time_to_expiration,
             cost_of_carry,
         )
-        if self.option_type == "european":
-            end_probabilities *= comb(self.steps + 1, jnp.arange(self.steps + 1))
 
         end_underlying_values = self._calc_end_values(
             start_price,
@@ -474,6 +480,7 @@ class CRRBinomialTree(BinomialTree):
         scaled_volatility = volatility * jnp.sqrt(time_to_expiration / self.steps)
         return jnp.exp(scaled_volatility), jnp.exp(-scaled_volatility)
 
+    @partial(jax.jit, static_argnums=0)
     @typeguard.typechecked
     def _calc_end_probabilities(
         self,
@@ -504,7 +511,10 @@ class CRRBinomialTree(BinomialTree):
 
 
 class RendlemanBartterBinomialTree(BinomialTree):
-    """Rendleman Bartter tree method (equal probability of upward and downward movement)."""
+    """Rendleman Bartter tree method (equal probability of upward and downward movement).
+
+    `__call__()` is tested to within 3e-2 (absolute and relative tolerance) of published results.
+    """
 
     def _calc_end_probabilities(
         self,
@@ -521,7 +531,10 @@ class RendlemanBartterBinomialTree(BinomialTree):
         p_up = jnp.expand_dims(p_up, -1)
         up_steps = jnp.arange(self.steps + 1)
 
-        end_probabilities = jnp.power(p_up, up_steps) * jnp.power(1 - p_up, self.steps - up_steps)
+        end_probabilities = jnp.power(p_up, up_steps) * jnp.power(
+            1 - p_up,
+            self.steps - up_steps,
+        )
         if self.option_type == "european":
             end_probabilities *= comb(self.steps, up_steps)
         return end_probabilities
@@ -541,6 +554,7 @@ class RendlemanBartterBinomialTree(BinomialTree):
         const = (cost_of_carry - jnp.power(volatility, 2.0) / 2.0) * delta_t
         return jnp.exp(const + scaled_volatility), jnp.exp(const - scaled_volatility)
 
+    @partial(jax.jit, static_argnums=0)
     def value(
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],

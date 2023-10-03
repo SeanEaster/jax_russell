@@ -2,7 +2,7 @@
 import pytest
 from jax import numpy as jnp
 
-from jax_russell import base, trees
+from jax_russell import StockOptionRBTree
 from tests.base import option_types
 
 rb_steps = [12, 52, 100]
@@ -31,10 +31,7 @@ def test_rb(steps, option_type):
     rb_is_call = jnp.array([0.0])
     rb_strike = jnp.expand_dims(jnp.array([75.0, 100.0, 125.0]), -1)
 
-    class UnderTest(base.StockOptionMixin, trees.RendlemanBartterBinomialTree):
-        pass
-
-    test_class = UnderTest(steps, option_type)
+    test_class = StockOptionRBTree(steps, option_type)
     actual = test_class(
         rb_start,
         rb_volatility,
@@ -44,5 +41,4 @@ def test_rb(steps, option_type):
         rb_strike,
     )
     expected = jnp.expand_dims(rb_expected[option_type][steps], -1)
-    print(actual, expected)
     assert jnp.allclose(actual, expected, atol=3e-2, rtol=3e-2)

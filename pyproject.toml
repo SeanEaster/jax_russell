@@ -1,9 +1,9 @@
 [tool]
 [tool.poetry]
 name = "jax-russell"
-version = "0.1.1"
+version = "0.2.0"
 homepage = "https://github.com/SeanEaster/jax_russell"
-description = "Formulas to price options."
+description = "Financial options valuations and auto-diffed risk measures (\"greeks\" in Jax."
 authors = ["Sean Easter <sean@easter.ai>"]
 readme = "README.md"
 license = "GPL-3.0-only"
@@ -28,6 +28,7 @@ jax = ">=0.4.14,<1"
 jaxlib = ">=0.4.14,<1"
 pymdown-extensions = "^9.4"
 typeguard = ">=4.1.2,<4.1.4"
+jaxopt = "^0.8"
 
 black = { version = "^23.7.0", optional = true }
 isort = { version = "^5.8.0", optional = true }

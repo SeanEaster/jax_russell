@@ -1,19 +1,16 @@
 """Tests for tree models."""
-from typing import Any
 
 import pytest
 from jax import numpy as jnp
 
-from jax_russell import base, trees
+from jax_russell import trees
+from tests.base import mixin_classes
 
-tree_classes = [trees.CRRBinomialTree, trees.RendlemanBartterBinomialTree]
-option_types = ["european", "american"]
-mixin_classes = [
-    base.StockOptionMixin,
-    base.FuturesOptionMixin,
-    base.AsayMargineduturesOptionMixin,
-    base.StockOptionContinuousDividendMixin,
+tree_classes = [
+    trees.CRRBinomialTree,
+    trees.RendlemanBartterBinomialTree,
 ]
+option_types = ["european", "american"]
 
 
 haug_start_price = jnp.array([100.0])
@@ -27,10 +24,10 @@ haug_inputs = (
     haug_start_price,
     haug_volatility,
     haug_time_to_expiration,
-    haug_is_call,
-    haug_strike,
     haug_risk_free_rate,
     haug_cost_of_carry,
+    haug_is_call,
+    haug_strike,
 )
 
 
@@ -70,75 +67,6 @@ num_assets = 2
 
 
 starts = 5
-triu_indices = jnp.triu_indices(
-    starts + 1,
-    starts + 1,
-)
-
-haug_crr_full_sample = jnp.array(
-    [
-        [
-            100.00000000,
-            109.95141602,
-            120.89313507,
-            132.92370605,
-            146.15148926,
-            160.69563293,
-        ],
-        [
-            0.00000000,
-            90.94926453,
-            100.00000000,
-            109.95141602,
-            120.89312744,
-            132.92370605,
-        ],
-        [
-            0.00000000,
-            0.00000000,
-            82.71768188,
-            90.94926453,
-            100.00000000,
-            109.95140839,
-        ],
-        [
-            0.00000000,
-            0.00000000,
-            0.00000000,
-            75.23111725,
-            82.71768188,
-            90.94925690,
-        ],
-        [
-            0.00000000,
-            0.00000000,
-            0.00000000,
-            0.00000000,
-            68.42214966,
-            75.23112488,
-        ],
-        [
-            0.00000000,
-            0.00000000,
-            0.00000000,
-            0.00000000,
-            0.00000000,
-            62.22943497,
-        ],
-    ]
-)
-
-haug_crr_full_exc = jnp.array(
-    [
-        [0.00000000, 0.00000000, 0.00000000, 0.00000000, 0.00000000, 0.00000000],
-        [0.00000000, 4.05073547, 0.00000000, 0.00000000, 0.00000000, 0.00000000],
-        [0.00000000, 0.00000000, 12.28231812, 4.05073547, 0.00000000, 0.00000000],
-        [0.00000000, 0.00000000, 0.00000000, 19.76888275, 12.28231812, 4.05074310],
-        [0.00000000, 0.00000000, 0.00000000, 0.00000000, 26.57785034, 19.76887512],
-        [0.00000000, 0.00000000, 0.00000000, 0.00000000, 0.00000000, 32.77056503],
-    ]
-)
-
 haug_crr_full_values = jnp.array(
     [
         [4.91921711, 2.01902986, 0.44127661, 0.00000000, 0.00000000, 0.00000000],
@@ -154,12 +82,12 @@ haug_crr_full_values = jnp.array(
 def test_haug():
     """Test American tree against textbook example."""
     actual = trees.CRRBinomialTree(5, "american")(*haug_inputs)
-    jnp.allclose(actual, haug_crr_full_values[0, 0])
+    assert jnp.allclose(actual, haug_crr_full_values[0, 0])
 
 
 @pytest.mark.parametrize("tree_class", tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
-def test_call(tree_class: Any, option_type: str):
+def test_call(tree_class, option_type: str):
     """Test instantiation and call for all tree classes and option types.
 
     Args:

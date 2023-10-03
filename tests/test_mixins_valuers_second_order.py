@@ -16,8 +16,8 @@ from tests.trees import tree_classes
     ],
 )
 def test_mixins_valuers_second_order(
-    tree_class: trees.CRRBinomialTree,
-    option_type: str,
+    tree_class,
+    option_type,
     mixin_class,
     mixin_call_args,
     valuer_class,

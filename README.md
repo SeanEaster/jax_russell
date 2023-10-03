@@ -10,7 +10,9 @@
 
 `jax-rusell` is a package that implements financial option formulas, and leverages Jax's autodifferentiation to support calculating "the greeks." 
 
-Formulas are generally taken from Espen Haug's _The Complete Guide to Option Pricing Formulas_.
+Formulas are taken from Espen Haug's _The Complete Guide to Option Pricing Formulas_, unless otherwise noted.
+
+**Pre-alpha, API unstable.**
 
 
 * Documentation: <https://SeanEaster.github.io/jax_russell>
@@ -21,12 +23,16 @@ Formulas are generally taken from Espen Haug's _The Complete Guide to Option Pri
 
 ## Features
 
-* Classes implementing standard tree methods, like Cox-Ross-Rubinstein and Rendleman Bartter
+* Standard tree methods, like Cox-Ross-Rubinstein and Rendleman Bartter, for American and European options
+* Generalized Black-Scholes-Merton 
+* First- and second-order risk measures ("the greeks") via auto-differentiation
+* Support for options on stocks, stocks with continuous dividend, futures and margined futures (see the section "Usage")
+
 
 ### Planned
 
-- Black Scholes and variations
-- More comprehensive testing
+- More comprehensive testing (greeks against first- and second-differences)
+- Skewed and leptokurtic methods
 
 
 ## Credits

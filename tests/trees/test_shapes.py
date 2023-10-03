@@ -76,6 +76,5 @@ def test_haug_broadcasted(
         min_total_dims,
     )
 
-    print(expected_shape)
     actual = tree_class(5, "american")(*jnp.broadcast_arrays(*expanded_inputs))
     assert actual.shape == tuple(expected_shape)
