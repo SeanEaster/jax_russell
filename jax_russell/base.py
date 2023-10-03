@@ -134,7 +134,9 @@ class ValuationModel(abc.ABC):
             residuals = expected - self(*bound_arguments.args, **bound_arguments.kwargs)
             return jnp.mean(residuals**2)
 
-        solver = jaxopt.BFGS(objective)
+        solver = jaxopt.BFGS(
+            objective,
+        )
         res = solver.run(
             init_params,
             expected=expected_option_values,

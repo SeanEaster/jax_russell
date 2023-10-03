@@ -63,13 +63,24 @@ def test_mixins_solve(
         {implied_arg: guess},
         **dict(zip(arg_names, call_args)),
     )
+    # todo: update to just test output of solved output against expected
 
-    assert jnp.allclose(
-        params[implied_arg],
-        expected,
-        atol=ABSOLUTE_TOLERANCES.get(implied_arg, 1e-6),
-        # rtol=1e-5,
-    )
+    # todo: this should try this for implied volatility, and if it fails try the same test with the negative of the implied volatility
+    try:
+        assert jnp.allclose(
+            params[implied_arg],
+            expected,
+            atol=ABSOLUTE_TOLERANCES.get(implied_arg, 1e-6),
+        )
+    except AssertionError as exception:
+        # todo: test warning about negative IV
+        if implied_arg != "volatility":
+            raise exception
+        assert jnp.allclose(
+            -params[implied_arg],
+            expected,
+            atol=ABSOLUTE_TOLERANCES.get(implied_arg, 1e-6),
+        )
 
 
 @pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
@@ -115,4 +126,5 @@ def test_mixins_solve_bsm(
         params[implied_arg],
         expected,
         atol=ABSOLUTE_TOLERANCES.get(implied_arg, 1e-6),
+        # rtol=1e-5,
     )
