@@ -12,7 +12,7 @@
         <link rel="canonical" href="https://SeanEaster.github.io/jax_russell/">
       
       <link rel="shortcut icon" href="assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.5.2, mkdocs-material-6.2.8">
+      <meta name="generator" content="mkdocs-1.5.3, mkdocs-material-6.2.8">
     
     
       
@@ -443,7 +443,8 @@
 <a href="https://github.com/SeanEaster/jax_russell/actions/workflows/dev.yml"><img alt="Build Status" src="https://github.com/SeanEaster/jax_russell/actions/workflows/dev.yml/badge.svg" /></a>
 <a href="https://codecov.io/github/SeanEaster/jax_russell"><img alt="codecov" src="https://codecov.io/gh/SeanEaster/jax_russell/branch/main/graphs/badge.svg" /></a></p>
 <p><code>jax-rusell</code> is a package that implements financial option formulas, and leverages Jax's autodifferentiation to support calculating "the greeks." </p>
-<p>Formulas are generally taken from Espen Haug's <em>The Complete Guide to Option Pricing Formulas</em>.</p>
+<p>Formulas are taken from Espen Haug's <em>The Complete Guide to Option Pricing Formulas</em>, unless otherwise noted.</p>
+<p><strong>Pre-alpha, API unstable.</strong></p>
 <ul>
 <li>Documentation: <a href="https://SeanEaster.github.io/jax_russell">https://SeanEaster.github.io/jax_russell</a></li>
 <li>GitHub: <a href="https://github.com/SeanEaster/jax_russell">https://github.com/SeanEaster/jax_russell</a></li>
@@ -452,12 +453,15 @@
 </ul>
 <h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Classes implementing standard tree methods, like Cox-Ross-Rubinstein and Rendleman Bartter</li>
+<li>Standard tree methods, like Cox-Ross-Rubinstein and Rendleman Bartter, for American and European options</li>
+<li>Generalized Black-Scholes-Merton </li>
+<li>First- and second-order risk measures ("the greeks") via auto-differentiation</li>
+<li>Support for options on stocks, stocks with continuous dividend, futures and margined futures (see the section "Usage")</li>
 </ul>
 <h4 id="planned">Planned<a class="headerlink" href="#planned" title="Permanent link">&para;</a></h4>
 <ul>
-<li>Black Scholes and variations</li>
-<li>More comprehensive testing</li>
+<li>More comprehensive testing (greeks against first- and second-differences)</li>
+<li>Skewed and leptokurtic methods</li>
 </ul>
 <h3 id="credits">Credits<a class="headerlink" href="#credits" title="Permanent link">&para;</a></h3>
 <p>This package was created with <a href="https://github.com/audreyr/cookiecutter">Cookiecutter</a> and the <a href="https://github.com/waynerv/cookiecutter-pypackage">waynerv/cookiecutter-pypackage</a> project template.</p>

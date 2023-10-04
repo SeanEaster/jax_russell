@@ -12,7 +12,7 @@
         <link rel="canonical" href="https://SeanEaster.github.io/jax_russell/usage/">
       
       <link rel="shortcut icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.5.2, mkdocs-material-6.2.8">
+      <meta name="generator" content="mkdocs-1.5.3, mkdocs-material-6.2.8">
     
     
       
@@ -374,6 +374,38 @@
 <p>To use jax_russell in a project</p>
 <div class="highlight"><pre><span></span><code>import jax_russell
 </code></pre></div>
+<p>For example, this computes the value of an example option given in <em>The Complete Guide to Option Pricing Formulas</em>:</p>
+<div class="highlight"><pre><span></span><code>from jax import numpy as jnp
+import jax_russell as jr
+haug_start_price = jnp.array([100.0])
+haug_volatility = jnp.array([0.3])
+haug_time_to_expiration = jnp.array([0.5])
+haug_is_call = jnp.array([0.0])
+haug_strike = jnp.array([95.0])
+haug_risk_free_rate = jnp.array([0.08])
+haug_cost_of_carry = jnp.array([0.08])
+haug_inputs = (
+    haug_start_price,
+    haug_volatility,
+    haug_time_to_expiration,
+    haug_risk_free_rate,
+    haug_is_call,
+    haug_strike,
+)
+tree = jr.StockOptionCRRTree(5, &quot;american&quot;)
+print(tree(*haug_inputs))
+</code></pre></div>
+<p>Run this, and you should see <code>Array([4.9192114], dtype=float32)</code>. Try calling <code>tree.first_order(*haug_inputs)</code> to see the example's first-order greeks:
+<div class="highlight"><pre><span></span><code>&gt;&gt;&gt; tree.first_order(*haug_inputs)
+Array([[ -0.37834674,  26.823406  ,   5.7209864 , -14.537726  ]], dtype=float32)
+</code></pre></div></p>
+<p>These values correspond to the order of the inputs, i.e. respectfully delta, vega or kappa, theta and rho.
+Vega, rho report the change resulting from a full-unit change in volatility, interest rate; divide these by 100 and they'll report the value per 1% change.
+Likewise, the returned theta value is reported per year. Typically, theta is reported per trading day, so the value given by <code>first_order()</code> will require adjustment to match what you see in trading platforms.</p>
+<p>In the example above, five is an impractically small number of steps.
+As of this writing (Sept. 2023), <a href="https://www.interactivebrokers.com/en/general/education/pdfnotes/PDF-OIR.php">Interactive Brokers reports implied volatility using a 100-step tree</a>.
+Because <code>__call__()</code>, <code>first_order()</code> and <code>second_order()</code> are just-in-time compiled, steps values of this magnitude can make for a long first call to these methods. 
+Subsequent calls are speedy.</p>
                 
               
               
