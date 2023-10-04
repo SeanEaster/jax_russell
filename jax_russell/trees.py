@@ -42,7 +42,7 @@ def calc_time_steps(
         int: minimum number of steps
     """
     time_steps = 1
-    price_change = jnp.inf
+    price_change = jnp.array(jnp.inf)
     tree = tree_class(time_steps, *tree_class_args)
 
     while jnp.abs(price_change) > change_tolerance:
