@@ -1,6 +1,5 @@
 """Module for shared components and utilities."""
 
-
 import abc
 import inspect
 from functools import partial
@@ -79,7 +78,7 @@ class ValuationModel(abc.ABC):
         """Automatically calculate first-order greeks.
 
         Returns:
-            _type_: _description_
+            jnp.array: first-order derivatives of option values
         """
         inspect.signature(self).bind(*args, **kwargs)
         return jnp.hstack(
@@ -94,7 +93,7 @@ class ValuationModel(abc.ABC):
         """Automatically calculate second-order greeks.
 
         Returns:
-            _type_: _description_
+            jnp.array: second-order derivatives of option values
         """
         inspect.signature(self).bind(*args, **kwargs)
         return jnp.concatenate(

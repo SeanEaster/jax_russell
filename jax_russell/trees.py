@@ -1,6 +1,5 @@
 """Tree models."""
 
-
 import abc
 from functools import partial
 from typing import Any, Callable, Tuple, Union
@@ -265,7 +264,7 @@ class AmericanDiscounter(Discounter):
             up_factor (jaxtyping.Float[jaxtyping.Array, ): factor applied for an upward move
 
         Returns:
-            _type_: _description_
+            jnp.array: discounted option values
         """  # noqa
         underlying_values = end_underlying_values
         delta_t = time_to_expiration / self.steps
@@ -329,9 +328,7 @@ class BinomialTree(ValuationModel):
         self.discounter = (
             discounter
             if discounter is not None
-            else AmericanDiscounter(steps)
-            if option_type == 'american'
-            else EuropeanDiscounter()
+            else AmericanDiscounter(steps) if option_type == 'american' else EuropeanDiscounter()
         )
 
     def _calc_end_values(

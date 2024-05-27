@@ -1,5 +1,7 @@
 """Tests for tree models."""
 
+from typing import Callable, Tuple
+
 import pytest
 from jax import numpy as jnp
 
@@ -91,8 +93,8 @@ def test_call(tree_class, option_type: str):
     """Test instantiation and call for all tree classes and option types.
 
     Args:
-        tree_class (Any): _description_
-        option_type (str): _description_
+        tree_class (Any): tree class under test
+        option_type (str): option type, i.e. European or American
     """
     tree_class(5, option_type)(*haug_inputs)
 
@@ -179,22 +181,22 @@ def test_mixins_second_order(
     ],
 )
 def test_mixins_valuers_second_order(
-    tree_class: trees.CRRBinomialTree,
+    tree_class: Callable,
     option_type: str,
-    mixin_class,
-    mixin_call_args,
-    valuer_class,
-    valuer_args,
+    mixin_class: Callable,
+    mixin_call_args: Tuple,
+    valuer_class: Callable,
+    valuer_args: Tuple,
 ):
     """Using non-default valuer, test instantiation and call for all tree classes, option types and security mixins.
 
     Args:
-        tree_class (trees.CRRBinomialTree): _description_
-        option_type (str): _description_
-        mixin_class (Callable): _description_
-        mixin_call_args (Tuple[Any]): _description_
-        valuer_class (_type_): _description_
-        valuer_args (_type_): _description_
+        tree_class (trees.CRRBinomialTree): class under test
+        option_type (str): Option class, i.e. European or Americn
+        mixin_class (Callable): mix-in class under test
+        mixin_call_args (Tuple[Any]): arguments passed to mixin class
+        valuer_class (Callable): valuer class under test
+        valuer_args (Tuple[Any]): arguments passed to valuer_class
     """
 
     class UnderTest(mixin_class, tree_class):  # type: ignore
