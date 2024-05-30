@@ -1,4 +1,5 @@
 """Test all valuation classes with all mixins."""
+
 import inspect
 
 import pytest
@@ -7,7 +8,6 @@ from jax import numpy as jnp
 from jax_russell.bsm import GeneralizedBlackScholesMerten
 from tests.base import mixin_call_args, mixin_classes, option_types
 from tests.trees import tree_classes
-
 
 implied_args = ["volatility", "time_to_expiration", "risk_free_rate", "cost_of_carry", "strike"]
 

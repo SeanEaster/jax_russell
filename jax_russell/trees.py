@@ -591,3 +591,91 @@ class RendlemanBartterBinomialTree(BinomialTree):
             end_underlying_values,
         )
         return self.discounter(*args)
+
+
+# @partial(jax.jit, static_argnums=0)
+def back_update_tree(
+    update_from_index: int,
+    node_probabilities: jaxtyping.Float[jaxtyping.Array, "*batch steps+1 steps+1"],
+    node_values: jaxtyping.Float[jaxtyping.Array, "*batch steps+1 steps+1"],
+    stepwise_cost_of_carry,
+):
+
+    # assert update_from_index > 0, "update_index must be greater than zero"
+    node_probabilities_vec = node_probabilities[..., update_from_index]
+
+    path_probabilities = node_probabilities_vec / comb(
+        update_from_index,
+        jnp.arange(node_probabilities_vec.shape[-1]),
+        # jax.lax.dynamic_update_slice(
+        #     jnp.arange(node_probabilities_vec.shape[-1]),
+        #     jnp.zeros(node_probabilities_vec.shape[-1], dtype=jnp.int64),
+        #     (update_from_index,),
+        # ),
+        # .at[:update_from_index].set(0.0),
+    )
+    upward = path_probabilities[..., :-1]
+    downward = path_probabilities[..., 1:]
+    updated_probabilities_vec = (upward + downward) * comb(
+        update_from_index - 1,
+        # jnp.arange(upward.shape[-1]).at[:update_from_index].set(0.0),
+        jnp.arange(upward.shape[-1]),
+        # jax.lax.dynamic_update_slice(
+        #     jnp.arange(upward.shape[-1]),
+        #     jnp.zeros(upward.shape[-1], dtype=jnp.int64),
+        #     (update_from_index,),
+        # ),
+    )
+
+    up_transition_probability = upward / (upward + downward)
+    node_values_vec = node_values[..., update_from_index]
+    updated_values_vec = (1.0 - up_transition_probability) * node_values_vec[
+        1:
+    ] + up_transition_probability * node_values_vec[:-1]
+    updated_values_vec = updated_values_vec / stepwise_cost_of_carry
+
+    return (
+        node_probabilities.at[..., :-1, update_from_index - 1].set(updated_probabilities_vec),
+        node_values.at[..., :-1, update_from_index - 1].set(updated_values_vec),
+        stepwise_cost_of_carry,
+    )
+
+
+# @partial(jax.jit, static_argnums=0)
+def back_update_body_fn(index_from_right, values_tuple):
+
+    node_probabilities, node_values, stepwise_cost_of_carry = values_tuple
+    update_from_index = node_probabilities.shape[-1] - index_from_right
+    return back_update_tree(
+        update_from_index,
+        node_probabilities,
+        node_values,
+        stepwise_cost_of_carry,
+    )
+
+
+def calc_recombining_tree(
+    end_probabilities: jaxtyping.Float[jaxtyping.Array, "*batch steps+1"],
+    end_values: jaxtyping.Float[jaxtyping.Array, "*batch steps+1"],
+    stepwise_cost_of_carry,
+):
+    steps = end_probabilities.shape[-1] - 1
+    node_probabilities = (
+        jnp.zeros(end_probabilities.shape + (end_probabilities.shape[-1],)).at[..., :, -1].set(end_probabilities)
+    )
+    node_values = jnp.zeros(end_values.shape + (end_values.shape[-1],)).at[..., :, -1].set(end_values)
+    node_probabilities, node_values, _ = jax.lax.fori_loop(
+        1,
+        steps + 1,
+        back_update_body_fn,
+        (node_probabilities, node_values, stepwise_cost_of_carry),
+    )
+    return jnp.triu(node_probabilities), jnp.triu(node_values)
+
+    # values = values.at[..., :-1].set(
+    #             self.exercise_valuer(
+    #                 underlying_values[..., :-1],
+    #                 strike,
+    #                 is_call,
+    #             )
+    #         )
