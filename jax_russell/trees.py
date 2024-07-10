@@ -837,29 +837,6 @@ def back_update_body_fn(index_from_right, values_tuple):
     )
 
 
-def calc_recombining_tree(
-    end_probabilities: jaxtyping.Float[jaxtyping.Array, "*batch steps+1"],
-    end_values: jaxtyping.Float[jaxtyping.Array, "*batch steps+1"],
-    stepwise_cost_of_carry,
-):
-    steps = end_probabilities.shape[-1] - 1
-    end_probabilities /= end_probabilities.sum(
-        -1,
-        keepdims=True,
-    )
-    node_probabilities = (
-        jnp.zeros(end_probabilities.shape + (end_probabilities.shape[-1],)).at[..., :, -1].set(end_probabilities)
-    )
-    node_values = jnp.zeros(end_values.shape + (end_values.shape[-1],)).at[..., :, -1].set(end_values)
-    node_probabilities, node_values, _ = jax.lax.fori_loop(
-        1,
-        steps + 1,
-        back_update_body_fn,
-        (node_probabilities, node_values, stepwise_cost_of_carry),
-    )
-    return jnp.triu(node_probabilities), jnp.triu(node_values)
-
-
 def back_combine(
     iter_from_end_time: int,
     node_probabilities,
@@ -921,7 +898,7 @@ def back_combine(
     )
 
 
-def calc_recombining_tree_exp(
+def calc_recombining_tree(
     end_probabilities: jaxtyping.Float[jaxtyping.Array, "*batch steps+1"],
     end_values: jaxtyping.Float[jaxtyping.Array, "*batch steps+1"],
 ):

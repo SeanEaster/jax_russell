@@ -10,7 +10,6 @@ from jax_russell.trees import (
     back_combine,
     back_update_tree,
     calc_recombining_tree,
-    calc_recombining_tree_exp,
 )
 
 jax.config.update("jax_enable_x64", True)
@@ -218,7 +217,7 @@ def test_back_combine():
 
 
 def test_calc_recombining_tree_exp():
-    actual_probabilities, actual_return_values = calc_recombining_tree_exp(END_PROBABILITIES, END_VALUES)
+    actual_probabilities, actual_return_values = calc_recombining_tree(END_PROBABILITIES, END_VALUES)
     assert jnp.allclose(
         EXPECTED_NODE_PROBABILITIES,
         actual_probabilities,
