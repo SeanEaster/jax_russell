@@ -26,6 +26,16 @@ def comb(
     return jnp.exp(gammaln(N + 1) - gammaln(k + 1) - gammaln(N - k + 1))
 
 
+def calc_path_probabilities(node_probabilities, steps):
+    coefs = comb(
+        steps,
+        jnp.arange(node_probabilities.shape[-1]),
+    )
+    # print(coefs, jnp.where(coefs > 0.0, node_probabilities, 0.0) / jnp.where(coefs > 0.0, coefs, 1.0))
+
+    return jnp.where(coefs > 0.0, node_probabilities, 0.0) / jnp.where(coefs > 0.0, coefs, 1.0)
+
+
 def calc_time_steps(
     change_tolerance: float,
     tree_class: Callable,
@@ -299,6 +309,104 @@ class AmericanDiscounter(Discounter):
 
         return values[..., 0] if len(values.shape) != 0 else jnp.expand_dims(values, -1)
 
+    def build_next_value_body_function(
+        self,
+        strike,
+        time_to_expiration,
+        risk_free_rate,
+        is_call,
+        p_up,
+        up_factor,
+    ):
+
+        delta_t = time_to_expiration / self.steps
+
+        def next_value(_, values_tuple):
+            values, underlying_values = values_tuple
+            discounted_value = jnp.exp(-risk_free_rate * delta_t) * (
+                (1 - p_up) * values[..., :-1] + p_up * values[..., 1:]
+            )
+            underlying_values = underlying_values / up_factor
+            values = values.at[..., :-1].set(
+                self.exercise_valuer(
+                    underlying_values[..., :-1],
+                    strike,
+                    is_call,
+                )
+            )
+            values = values.at[..., :-1].set(
+                jnp.maximum(
+                    discounted_value,
+                    values[..., :-1],
+                )
+            )
+            return values, underlying_values
+
+        return next_value
+
+    def build_next_value_body_function_exp_rubinstein(
+        self,
+        start_price,
+        end_underlying_values,
+        strike,
+        time_to_expiration,
+        risk_free_rate,
+        is_call,
+        end_probabilities,
+    ):
+        # this should
+        tree_implied_risk_free_rate = jnp.power(
+            jnp.squeeze(
+                jnp.dot(
+                    end_underlying_values,
+                    jnp.expand_dims(end_probabilities, -1),
+                ),
+                -1,
+            )
+            / start_price,
+            1.0 / (end_underlying_values.shape[-1] - 1),
+        )
+        delta_t = time_to_expiration / self.steps
+
+        if risk_free_rate is None:
+            risk_free_rate = tree_implied_risk_free_rate
+
+        def next_value(idx, values_tuple):
+            values, underlying_values, node_probabilities = values_tuple
+
+            # this derives the path probabilities P+ and P- for Rubinstein's "step one"
+            path_probabilities = node_probabilities / comb(
+                update_from := node_probabilities.shape[-1] - 1 - idx,
+                jnp.arange(
+                    node_probabilities.shape[-1],
+                ),
+            )
+            upward_path_probabilities = path_probabilities[..., :-1]
+            downward_path_probabilities = path_probabilities[..., 1:]
+
+            # add them as in Rubinstein "step one," multiply by combinatorial factor to calculate node probabilities
+            node_probabilities = (upward_path_probabilities + downward_path_probabilities) * comb(
+                update_from - 1,
+                jnp.arange(upward_path_probabilities.shape[-1]),
+            )
+            # "step two"
+            p_up = upward_path_probabilities / (upward_path_probabilities + downward_path_probabilities)
+            discounted_value = jnp.exp(-risk_free_rate * delta_t) * (
+                (1 - p_up) * values[..., :-1] + p_up * values[..., 1:]
+            )
+            underlying_values = (
+                p_up * underlying_values[..., :-1] + (1.0 - p_up) * underlying_values[..., 1:]
+            ) / tree_implied_risk_free_rate
+
+            values = jnp.maximum(
+                self.exercise_valuer(underlying_values, strike, is_call),
+                discounted_value,
+            )
+
+            return values, underlying_values, node_probabilities
+
+        return next_value
+
 
 class BinomialTree(ValuationModel):
     """Base abstract class for binomial trees."""
@@ -342,7 +450,7 @@ class BinomialTree(ValuationModel):
         Returns:
             jnp.array: array with possible values of each contract in the last dimension
         """
-        up_steps = jnp.arange(self.steps + 1)
+        up_steps = jnp.flip(jnp.arange(self.steps + 1))
 
         return jnp.exp(
             jnp.log(jnp.expand_dims(start_price, -1))
@@ -526,7 +634,7 @@ class RendlemanBartterBinomialTree(BinomialTree):
         """
         p_up = jnp.broadcast_to(jnp.array([0.5]), broadcast_to.shape)
         p_up = jnp.expand_dims(p_up, -1)
-        up_steps = jnp.arange(self.steps + 1)
+        up_steps = jnp.flip(jnp.arange(self.steps + 1))
 
         end_probabilities = jnp.power(p_up, up_steps) * jnp.power(
             1 - p_up,
@@ -593,7 +701,95 @@ class RendlemanBartterBinomialTree(BinomialTree):
         return self.discounter(*args)
 
 
-# @partial(jax.jit, static_argnums=0)
+class RubinsteinImpliedBinomialTree(BinomialTree):
+    """Value options using implied trees over a single maturity as described in Rubinstein 1994."""
+
+    @partial(jax.jit, static_argnums=0)
+    def value(
+        self,
+        start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        end_probabilities: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        end_underlying_values: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+    ):
+        pass
+
+
+class RubinsteinAmericanDiscounter:
+
+    def __call__(
+        self,
+        end_probabilities: jaxtyping.Float[
+            jaxtyping.Array, "*#contracts n"
+        ],  # todo: update shapes against AmericanDiscounter as example
+        end_underlying_values: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        strike: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        is_call: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        underlying_return,  # todo: figure out shape
+    ):
+        underlying_values = end_underlying_values
+        delta_t = time_to_expiration / self.steps
+        values = self.exercise_valuer(
+            underlying_values,
+            strike,
+            is_call,
+        )
+
+        def next_value(index_from_right, values_tuple):
+            values, underlying_values, node_probabilities = values_tuple
+            update_from_index = node_probabilities.shape[-1] - index_from_right
+            path_probabilities = node_probabilities / comb(
+                update_from_index,
+                jnp.arange(node_probabilities.shape[-1]),
+            )
+            upward = path_probabilities[..., :-1]
+            downward = path_probabilities[..., 1:]
+            p_up = upward / (upward + downward)
+            discounted_value = jnp.exp(-risk_free_rate * delta_t) * (
+                (1 - p_up) * values[..., 1:] + p_up * values[..., :-1]
+            )
+
+            values = values.at[..., :-1].set(
+                jnp.maximum(
+                    self.exercise_valuer(
+                        underlying_values[..., -1],
+                        strike,
+                        is_call,
+                    ),
+                    discounted_value,
+                )
+            )
+
+            node_probabilities = node_probabilities.at[..., :-1].set(
+                (upward + downward)
+                * comb(
+                    update_from_index - 1,
+                    jnp.arange(upward.shape[-1]),
+                )
+            )
+            underlying_values = (
+                underlying_values.at[..., :-1].set(
+                    (1.0 - p_up) * underlying_values[..., 1:] + p_up * underlying_values[..., :-1]
+                )
+                / underlying_return
+            )
+
+            return values, underlying_values, node_probabilities
+
+        values, _, _ = jax.lax.fori_loop(
+            0, end_underlying_values.shape[-1] - 1, next_value, (values, underlying_values, end_probabilities)
+        )
+
+        return values[..., 0] if len(values.shape) != 0 else jnp.expand_dims(values, -1)
+
+
+@partial(jax.jit, static_argnums=0)
 def back_update_tree(
     update_from_index: int,
     node_probabilities: jaxtyping.Float[jaxtyping.Array, "*batch steps+1 steps+1"],
@@ -601,30 +797,17 @@ def back_update_tree(
     stepwise_cost_of_carry,
 ):
 
-    # assert update_from_index > 0, "update_index must be greater than zero"
     node_probabilities_vec = node_probabilities[..., update_from_index]
 
     path_probabilities = node_probabilities_vec / comb(
         update_from_index,
         jnp.arange(node_probabilities_vec.shape[-1]),
-        # jax.lax.dynamic_update_slice(
-        #     jnp.arange(node_probabilities_vec.shape[-1]),
-        #     jnp.zeros(node_probabilities_vec.shape[-1], dtype=jnp.int64),
-        #     (update_from_index,),
-        # ),
-        # .at[:update_from_index].set(0.0),
     )
     upward = path_probabilities[..., :-1]
     downward = path_probabilities[..., 1:]
     updated_probabilities_vec = (upward + downward) * comb(
         update_from_index - 1,
-        # jnp.arange(upward.shape[-1]).at[:update_from_index].set(0.0),
         jnp.arange(upward.shape[-1]),
-        # jax.lax.dynamic_update_slice(
-        #     jnp.arange(upward.shape[-1]),
-        #     jnp.zeros(upward.shape[-1], dtype=jnp.int64),
-        #     (update_from_index,),
-        # ),
     )
 
     up_transition_probability = upward / (upward + downward)
@@ -641,7 +824,7 @@ def back_update_tree(
     )
 
 
-# @partial(jax.jit, static_argnums=0)
+@partial(jax.jit, static_argnums=0)
 def back_update_body_fn(index_from_right, values_tuple):
 
     node_probabilities, node_values, stepwise_cost_of_carry = values_tuple
@@ -660,6 +843,10 @@ def calc_recombining_tree(
     stepwise_cost_of_carry,
 ):
     steps = end_probabilities.shape[-1] - 1
+    end_probabilities /= end_probabilities.sum(
+        -1,
+        keepdims=True,
+    )
     node_probabilities = (
         jnp.zeros(end_probabilities.shape + (end_probabilities.shape[-1],)).at[..., :, -1].set(end_probabilities)
     )
@@ -672,10 +859,96 @@ def calc_recombining_tree(
     )
     return jnp.triu(node_probabilities), jnp.triu(node_values)
 
-    # values = values.at[..., :-1].set(
-    #             self.exercise_valuer(
-    #                 underlying_values[..., :-1],
-    #                 strike,
-    #                 is_call,
-    #             )
-    #         )
+
+def back_combine(
+    iter_from_end_time: int,
+    node_probabilities,
+    node_return_values,
+):  # todo: type hints and shapes
+
+    # todo: refactor to avoid different sizes
+
+    num_nodes_start = node_probabilities.shape[-1] - iter_from_end_time
+
+    path_probabilities = calc_path_probabilities(
+        node_probabilities,
+        steps := num_nodes_start - 1,
+    )
+
+    upward_path_probabilities, downward_path_probabilities = (
+        path_probabilities[..., :-1],
+        path_probabilities[..., 1:],
+    )
+    up_transition_probability = upward_path_probabilities / (
+        combined_path_probabilities := upward_path_probabilities + downward_path_probabilities
+    )
+
+    return (
+        jnp.zeros(node_probabilities.shape)
+        .at[..., :-1]
+        .set(
+            new_node_probabilities := combined_path_probabilities
+            * comb(
+                steps - 1,
+                jnp.arange(upward_path_probabilities.shape[-1]),
+            )
+        ),
+        jnp.zeros(node_return_values.shape)
+        .at[..., :-1]
+        .set(
+            jnp.where(
+                new_node_probabilities > 0.0,
+                (
+                    up_transition_probability * node_return_values[..., :-1]
+                    + (1 - up_transition_probability) * node_return_values[..., 1:]
+                )
+                / jnp.power(
+                    jnp.squeeze(
+                        jnp.dot(
+                            node_probabilities[..., :],
+                            jnp.expand_dims(
+                                node_return_values[..., :],
+                                -1,
+                            ),
+                        ),
+                        -1,
+                    ),
+                    1.0 / (num_nodes_start - 1),
+                ),
+                0.0,
+            )
+        ),
+    )
+
+
+def calc_recombining_tree_exp(
+    end_probabilities: jaxtyping.Float[jaxtyping.Array, "*batch steps+1"],
+    end_values: jaxtyping.Float[jaxtyping.Array, "*batch steps+1"],
+):
+    end_probabilities = (
+        jnp.zeros(end_probabilities.shape + (end_probabilities.shape[-1],)).at[..., :, -1].set(end_probabilities)
+    )
+    end_values = jnp.zeros(end_values.shape + (end_values.shape[-1],)).at[..., :, -1].set(end_values)
+    num_nodes = end_probabilities.shape[-1]
+
+    def tree_combine(i, values_tuple):
+        end_probabilities, end_values = values_tuple
+        next_end_probabilities, next_end_values = back_combine(
+            i,
+            end_probabilities[..., :, source_idx := num_nodes - 1 - i],
+            end_values[..., :, source_idx],
+        )
+
+        return end_probabilities.at[..., :, update_idx := source_idx - 1].set(next_end_probabilities), end_values.at[
+            ..., :, update_idx
+        ].set(next_end_values)
+
+    return jax.lax.fori_loop(
+        0,
+        end_probabilities.shape[-1] - 1,
+        tree_combine,
+        (
+            end_probabilities,
+            end_values,
+        ),
+    )
