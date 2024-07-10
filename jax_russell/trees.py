@@ -287,9 +287,9 @@ class AmericanDiscounter(Discounter):
         def next_value(_, values_tuple):
             values, underlying_values = values_tuple
             discounted_value = jnp.exp(-risk_free_rate * delta_t) * (
-                (1 - p_up) * values[..., :-1] + p_up * values[..., 1:]
+                p_up * values[..., :-1] + (1 - p_up) * values[..., 1:]
             )
-            underlying_values = underlying_values * up_factor
+            underlying_values = underlying_values / up_factor
             values = values.at[..., :-1].set(
                 self.exercise_valuer(
                     underlying_values[..., :-1],
@@ -307,6 +307,72 @@ class AmericanDiscounter(Discounter):
 
         values, underlying_values = jax.lax.fori_loop(0, self.steps, next_value, (values, underlying_values))
 
+        return values[..., 0] if len(values.shape) != 0 else jnp.expand_dims(values, -1)
+
+
+class AmericanDiscounterExp(Discounter):
+
+    def __init__(
+        self,
+        exercise_valuer: Callable = MaxValuer(),
+    ) -> None:
+        """
+
+        Args:
+            steps (int): number of steps used in the tree
+            exercise_valuer (Callable, optional): Callable that takes `unadjusted_values` and returns exercise values. Defaults to MaxValuer().
+        """  # noqa
+        super().__init__(exercise_valuer)
+
+    def __call__(
+        self,
+        start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "*contracts n"],
+        strike: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        is_call: jaxtyping.Float[jaxtyping.Array, "*contracts 1"],
+        end_probabilities: jaxtyping.Float[jaxtyping.Array, "*contracts n"],
+    ) -> Any:
+
+        underlying_values = end_underlying_returns * start_price
+        delta_t = time_to_expiration / (end_underlying_returns.shape[-1] - 1)
+        values = self.exercise_valuer(
+            underlying_values,
+            strike,
+            is_call,
+        )
+
+        def body_fn(i, values_tuple):
+            values, node_probabilities, node_underlying_returns = values_tuple
+            new_node_probabilities, new_node_underlying_returns, up_transition_probability = back_combine(
+                i, node_probabilities, node_underlying_returns, None
+            )
+            discounted_value = jnp.exp(-risk_free_rate * delta_t) * (
+                up_transition_probability * values[..., :-1] + (1 - up_transition_probability) * values[..., 1:]
+            )
+
+            return (
+                values.at[..., :-1].set(
+                    jnp.maximum(
+                        self.exercise_valuer(
+                            new_node_underlying_returns[..., :-1] * start_price,
+                            strike,
+                            is_call,
+                        ),
+                        discounted_value,
+                    )
+                ),
+                new_node_probabilities,
+                new_node_underlying_returns,
+            )
+
+        values, *_ = jax.lax.fori_loop(
+            0,
+            end_probabilities.shape[-1] - 1,
+            body_fn,
+            (values, end_probabilities, end_underlying_returns),
+        )
         return values[..., 0] if len(values.shape) != 0 else jnp.expand_dims(values, -1)
 
 
@@ -358,6 +424,46 @@ class BinomialTree(ValuationModel):
             jnp.log(jnp.expand_dims(start_price, -1))
             + up_steps * jnp.log(jnp.expand_dims(up_factors, -1))
             + (self.steps - up_steps) * jnp.log(jnp.expand_dims(down_factors, -1))
+        )
+
+    def _forecast(
+        self,
+        start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        time_to_expiration,
+        cost_of_carry,
+    ) -> jaxtyping.Float[jaxtyping.Array, "*#contracts n"]:
+        """Return the possible end values for the underlying.
+
+        Returns:
+            jnp.array: array with possible values of each contract in the last dimension
+        """
+
+        up_factors, down_factors = self._calc_factors(time_to_expiration, cost_of_carry)
+        dim = self.steps + 1
+        up_steps = jnp.triu(jnp.tile(jnp.arange(dim), (dim, 1)) - jnp.expand_dims(jnp.arange(dim), -1))
+        downsteps = jnp.triu(jnp.arange(dim) - up_steps)
+
+        up_transition_probability = self._calc_transition_up_probabilities(
+            up_factors, down_factors, time_to_expiration, cost_of_carry
+        )
+
+        node_returns = jnp.triu(
+            jnp.exp(
+                jnp.log(jnp.expand_dims(start_price, -1))
+                + up_steps * jnp.log(jnp.expand_dims(up_factors, -1))
+                + (downsteps) * jnp.log(jnp.expand_dims(down_factors, -1))
+            )
+        )
+        return (
+            # jnp.triu(
+            #     jnp.exp(
+            #         jnp.log(up_transition_probability) * up_steps + jnp.log(1 - up_transition_probability) * downsteps
+            #     )
+            # ),
+            jnp.triu(
+                jnp.power(up_transition_probability, up_steps) * jnp.power(1 - up_transition_probability, downsteps)
+            ),
+            node_returns,
         )
 
     @typeguard.typechecked
@@ -507,7 +613,7 @@ class CRRBinomialTree(BinomialTree):
             time_to_expiration,
             cost_of_carry,
         )
-        up_steps = jnp.arange(self.steps + 1)
+        up_steps = jnp.flip(jnp.arange(self.steps + 1))
         end_probabilities = jnp.power(jnp.expand_dims(p_up, -1), up_steps) * jnp.power(
             1 - jnp.expand_dims(p_up, -1), self.steps - up_steps
         )
@@ -625,6 +731,7 @@ def back_combine(
     iter_from_end_time: int,
     node_probabilities,
     node_return_values,
+    up_transition_probability=None,
 ):  # todo: type hints and shapes
 
     # todo: refactor to avoid different sizes
@@ -679,6 +786,7 @@ def back_combine(
                 0.0,
             )
         ),
+        up_transition_probability,
     )
 
 
@@ -694,7 +802,7 @@ def calc_recombining_tree(
 
     def tree_combine(i, values_tuple):
         end_probabilities, end_values = values_tuple
-        next_end_probabilities, next_end_values = back_combine(
+        next_end_probabilities, next_end_values, _ = back_combine(
             i,
             end_probabilities[..., :, source_idx := num_nodes - 1 - i],
             end_values[..., :, source_idx],
