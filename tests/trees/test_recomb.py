@@ -215,9 +215,17 @@ def test_back_combine():
             EXPECTED_RETURN_VALUES[..., num_nodes_start - 2],
             atol=1e-3,
         )
-        # assert jnp.allclose(actual_return_values, EXPECTED_RETURN_VALUES[..., num_nodes_start - 1])
 
 
 def test_calc_recombining_tree_exp():
-    print(calc_recombining_tree_exp(END_PROBABILITIES, END_VALUES))
-    assert False
+    actual_probabilities, actual_return_values = calc_recombining_tree_exp(END_PROBABILITIES, END_VALUES)
+    assert jnp.allclose(
+        EXPECTED_NODE_PROBABILITIES,
+        actual_probabilities,
+        atol=1e-3,
+    )
+    assert jnp.allclose(
+        EXPECTED_RETURN_VALUES,
+        actual_return_values,
+        atol=1e-3,
+    )
