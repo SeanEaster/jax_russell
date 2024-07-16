@@ -1,9 +1,10 @@
 """Test against Haug example."""
+
 import pytest
 from jax import numpy as jnp
 
 from tests.base import BOOL_LIST, expand_args_for_broadcasting, option_types
-from tests.trees import tree_classes
+from tests.trees import forward_tree_classes
 
 
 @pytest.mark.parametrize("expand_start_price", BOOL_LIST)
@@ -14,7 +15,7 @@ from tests.trees import tree_classes
 @pytest.mark.parametrize("expand_is_call", BOOL_LIST)
 @pytest.mark.parametrize("expand_strike", BOOL_LIST)
 @pytest.mark.parametrize("min_total_dims", [1, 2])
-@pytest.mark.parametrize("tree_class", tree_classes)
+@pytest.mark.parametrize("tree_class", forward_tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
 def test_expanded(
     expand_start_price,
@@ -52,7 +53,7 @@ def test_expanded(
 @pytest.mark.parametrize("expand_is_call", BOOL_LIST)
 @pytest.mark.parametrize("expand_strike", BOOL_LIST)
 @pytest.mark.parametrize("min_total_dims", [1, 2])
-@pytest.mark.parametrize("tree_class", tree_classes)
+@pytest.mark.parametrize("tree_class", forward_tree_classes)
 def test_haug_broadcasted(
     expand_start_price,
     expand_volatility,

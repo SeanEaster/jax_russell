@@ -4,10 +4,10 @@ import pytest
 
 from jax_russell import trees
 from tests.base import mixin_call_args, mixin_classes, option_types
-from tests.trees import tree_classes
+from tests.trees import forward_tree_classes
 
 
-@pytest.mark.parametrize("tree_class", tree_classes)
+@pytest.mark.parametrize("tree_class", forward_tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
 @pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
 @pytest.mark.parametrize(

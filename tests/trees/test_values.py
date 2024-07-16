@@ -20,15 +20,16 @@ rb_expected = {
     },
 }
 
+rb_time_to_expiration = jnp.array(1.0)
+rb_volatility = jnp.array(0.324)
+rb_risk_free_rate = jnp.exp(jnp.array(0.05)) - 1
+
 
 @pytest.mark.parametrize("steps", rb_steps)
 @pytest.mark.parametrize("option_type", option_types)
 def test_rb(steps, option_type):
     """Test tree values against values given in Rendleman Bartter (1979)."""
     rb_start = jnp.array([100.0])
-    rb_volatility = jnp.array([0.324])
-    rb_time_to_expiration = jnp.array([1.0])
-    rb_risk_free_rate = jnp.exp(jnp.array([0.05])) - 1
     rb_is_call = jnp.array([0.0])
     rb_strike = jnp.expand_dims(jnp.array([75.0, 100.0, 125.0]), -1)
 
@@ -43,3 +44,13 @@ def test_rb(steps, option_type):
     )
     expected = jnp.expand_dims(rb_expected[option_type][steps], -1)
     assert jnp.allclose(actual, expected, atol=3e-2, rtol=3e-2)
+
+
+def test_forecast():
+    tree = StockOptionRBTree(12, "american")
+    for _ in tree.forecast_returns(
+        rb_volatility,
+        rb_time_to_expiration,
+        rb_risk_free_rate,
+    ):
+        print(_.shape)

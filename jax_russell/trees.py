@@ -276,13 +276,7 @@ class AmericanDiscounter(Discounter):
             strike,
             is_call,
         )
-        implied_risk_free_rate = jnp.power(
-            jnp.multiply(end_probabilities, end_underlying_returns).sum(
-                0,
-                keepdims=True,
-            ),
-            1.0 / (end_probabilities.shape[0] - 1),
-        )
+        implied_risk_free_rate = calc_implied_risk_free_rate(end_probabilities, end_underlying_returns)
         path_probabilities = calc_path_probabilities(
             end_probabilities,
             end_probabilities.shape[0] - 1,
@@ -318,6 +312,16 @@ class AmericanDiscounter(Discounter):
             (values, path_probabilities, end_underlying_returns),
         )
         return values[0, ...] if len(values.shape) != 0 else jnp.expand_dims(values, -1)
+
+
+def calc_implied_risk_free_rate(end_probabilities, end_underlying_returns):
+    return jnp.power(
+        jnp.multiply(end_probabilities, end_underlying_returns).sum(
+            0,
+            keepdims=True,
+        ),
+        1.0 / (end_probabilities.shape[0] - 1),
+    )
 
 
 class BinomialTree(ValuationModel):
@@ -396,28 +400,101 @@ class BinomialTree(ValuationModel):
         p_up = (jnp.exp(cost_of_carry * (time_to_expiration / self.steps)) - down_factors) / (up_factors - down_factors)
         return p_up
 
-    def _transform_args_for_discounter(  # todo: refactor out, left-expansion deprecates this
+    def _forecast(self, end_probabilities, end_underlying_returns):
+        _, (probabilities, forecasted_returns) = jax.lax.scan(
+            back_combine_paths_scan,
+            (
+                calc_path_probabilities(end_probabilities, self.steps),
+                end_underlying_returns,
+                calc_implied_risk_free_rate(end_probabilities, end_underlying_returns),
+            ),
+            None,
+            length=self.steps,
+        )
+        probabilities = jnp.flipud(probabilities)
+        num_paths = comb(
+            jnp.arange(probabilities.shape[0]).reshape((-1, 1)),
+            jnp.arange(probabilities.shape[-1]).reshape((1, -1)),
+        )
+
+        probabilities = probabilities * num_paths
+        probabilities, forecasted_returns = jnp.concatenate(
+            (
+                probabilities,
+                jnp.expand_dims(end_probabilities, 0),
+            )
+        ), jnp.concatenate(
+            (jnp.flipud(forecasted_returns), jnp.expand_dims(end_underlying_returns, 0)),
+        )
+
+        return probabilities, forecasted_returns
+
+
+class ForwardForecastTree(BinomialTree):
+
+    @typeguard.typechecked
+    def forecast_returns(
         self,
-        start_price,
-        time_to_expiration,
-        risk_free_rate,
-        is_call,
-        strike,
-        end_underlying_returns,
-        end_probabilities,
-    ):
-        args_to_expand = [
+        volatility: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+    ) -> Tuple:
+        end_probabilities, end_underlying_returns = self._calc_end_nodes(volatility, time_to_expiration, cost_of_carry)
+        probabilities, forecasted_returns = self._forecast(end_probabilities, end_underlying_returns)
+        # return jnp.flipud(probabilities), jnp.flipud(forecasted_returns)
+        return probabilities, forecasted_returns
+
+    @typeguard.typechecked
+    def forecast_values(
+        self,
+        start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        volatility: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+    ) -> jaxtyping.Float[jaxtyping.Array, "steps steps *#contracts"]:
+        probabilities, returns = self.forecast_returns(volatility, time_to_expiration, cost_of_carry)
+        return probabilities, returns * start_price
+
+    @partial(jax.jit, static_argnums=0)
+    def value(
+        self,
+        start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        volatility: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+    ) -> jaxtyping.Float[jaxtyping.Array, "*#contracts"]:
+        """Calculate values for option contracts.
+
+        Returns:
+            jnp.array: contract values
+        """
+        end_probabilities, end_underlying_returns = self._calc_end_nodes(volatility, time_to_expiration, cost_of_carry)
+
+        args = (
+            start_price,
+            end_probabilities,
+            end_underlying_returns,
             strike,
             time_to_expiration,
             risk_free_rate,
             is_call,
-        ]
-        args = [start_price, end_probabilities, end_underlying_returns] + args_to_expand
+        )
+        return self.discounter(*args)
 
-        return args
+    @abc.abstractmethod
+    def _calc_end_nodes(
+        self,
+        volatility,
+        time_to_expiration,
+        cost_of_carry,
+    ):  # todo: docstring
+        pass
 
 
-class CRRBinomialTree(BinomialTree):
+class CRRBinomialTree(ForwardForecastTree):
     """Cox Ross Rubinstein binomial tree.
 
     `__call__()` is tested against example in Haug.
@@ -440,32 +517,35 @@ class CRRBinomialTree(BinomialTree):
         Returns:
             jnp.array: contract values
         """
+        end_probabilities, end_underlying_returns = self._calc_end_nodes(volatility, time_to_expiration, cost_of_carry)
+
+        args = (
+            start_price,
+            end_probabilities,
+            end_underlying_returns,
+            strike,
+            time_to_expiration,
+            risk_free_rate,
+            is_call,
+        )
+        return self.discounter(*args)
+
+    def _calc_end_nodes(self, volatility, time_to_expiration, cost_of_carry):
         up_factors, down_factors = self._calc_factors(
             volatility,
             time_to_expiration,
         )
-        end_probabilities = self._calc_end_probabilities(
+        end_probabilities, end_underlying_returns = self._calc_end_probabilities(
             up_factors,
             down_factors,
             time_to_expiration,
             cost_of_carry,
-        )
-
-        end_underlying_returns = self._calc_end_returns(
+        ), self._calc_end_returns(
             up_factors,
             down_factors,
         )
 
-        args = self._transform_args_for_discounter(
-            start_price,
-            time_to_expiration,
-            risk_free_rate,
-            is_call,
-            strike,
-            end_underlying_returns,
-            end_probabilities,
-        )
-        return self.discounter(*args)
+        return end_probabilities, end_underlying_returns
 
     def _calc_factors(
         self,
@@ -510,7 +590,7 @@ class CRRBinomialTree(BinomialTree):
         return end_probabilities
 
 
-class RendlemanBartterBinomialTree(BinomialTree):
+class RendlemanBartterBinomialTree(ForwardForecastTree):
     """Rendleman Bartter tree method (equal probability of upward and downward movement).
 
     `__call__()` is tested to within 3e-2 (absolute and relative tolerance) of published results.
@@ -527,7 +607,7 @@ class RendlemanBartterBinomialTree(BinomialTree):
         Returns:
             jnp.Array: Array with probabiliities in the last dimension, size `self.steps + 1`
         """
-        p_up = jnp.broadcast_to(jnp.array([0.5]), broadcast_to.shape)
+        p_up = jnp.broadcast_to(jnp.array(0.5), broadcast_to.shape)
         p_up = jnp.expand_dims(p_up, 0)
         up_steps = self._right_expand_step_values(broadcast_to)
         end_probabilities = (
@@ -555,43 +635,18 @@ class RendlemanBartterBinomialTree(BinomialTree):
         const = (cost_of_carry - jnp.power(volatility, 2.0) / 2.0) * delta_t
         return jnp.exp(const + scaled_volatility), jnp.exp(const - scaled_volatility)
 
-    @partial(jax.jit, static_argnums=0)
-    def value(
-        self,
-        start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        volatility: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "*#contracts"]:
-        """Calculate values for option contracts.
-
-        Returns:
-            jnp.array: contract values
-        """
+    def _calc_end_nodes(self, volatility, time_to_expiration, cost_of_carry):
         up_factors, down_factors = self._calc_factors(
             volatility,
             time_to_expiration,
             cost_of_carry,
         )
-        end_probabilities = self._calc_end_probabilities(up_factors)
-        end_underlying_returns = self._calc_end_returns(
+        end_probabilities, end_underlying_returns = self._calc_end_probabilities(up_factors), self._calc_end_returns(
             up_factors,
             down_factors,
         )
 
-        args = self._transform_args_for_discounter(
-            start_price,
-            time_to_expiration,
-            risk_free_rate,
-            is_call,
-            strike,
-            end_underlying_returns,
-            end_probabilities,
-        )
-        return self.discounter(*args)
+        return end_probabilities, end_underlying_returns
 
 
 class RubinsteinImpliedBinomialTree(BinomialTree):
@@ -602,14 +657,41 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         end_probabilities: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        end_underlying_values: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
     ):
-        pass
+        return self.discounter(
+            start_price,
+            end_probabilities,
+            end_underlying_returns,
+            time_to_expiration,
+            risk_free_rate,
+            cost_of_carry,
+            is_call,
+            strike,
+        )
+
+    def forecast_returns(
+        self,
+        end_probabilities: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+    ):
+
+        return self._forecast(end_probabilities, end_underlying_returns)
+
+    def forecast_values(
+        self,
+        start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        end_probabilities: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+    ):
+
+        probabilities, returns = self.forecast_returns(end_probabilities, end_underlying_returns)
+        return probabilities, returns * start_price
 
 
 def back_combine_path_probabilities(

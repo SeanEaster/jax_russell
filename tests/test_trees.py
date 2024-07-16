@@ -8,7 +8,7 @@ from jax import numpy as jnp
 from jax_russell import trees
 from tests.base import mixin_classes
 
-tree_classes = [
+forward_tree_classes = [
     trees.CRRBinomialTree,
     trees.RendlemanBartterBinomialTree,
 ]
@@ -87,7 +87,7 @@ def test_haug():
     assert jnp.allclose(actual, haug_crr_full_values[0, 0])
 
 
-@pytest.mark.parametrize("tree_class", tree_classes)
+@pytest.mark.parametrize("tree_class", forward_tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
 def test_call(tree_class, option_type: str):
     """Test instantiation and call for all tree classes and option types.
@@ -99,7 +99,7 @@ def test_call(tree_class, option_type: str):
     tree_class(5, option_type)(*haug_inputs)
 
 
-@pytest.mark.parametrize("tree_class", tree_classes)
+@pytest.mark.parametrize("tree_class", forward_tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
 @pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
 def test_mixins_call(
@@ -123,7 +123,7 @@ def test_mixins_call(
     UnderTest(5, option_type)(*mixin_call_args)
 
 
-@pytest.mark.parametrize("tree_class", tree_classes)
+@pytest.mark.parametrize("tree_class", forward_tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
 @pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
 def test_mixins_first_order(
@@ -147,7 +147,7 @@ def test_mixins_first_order(
     UnderTest(5, option_type).first_order(*mixin_call_args)
 
 
-@pytest.mark.parametrize("tree_class", tree_classes)
+@pytest.mark.parametrize("tree_class", forward_tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
 @pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
 def test_mixins_second_order(
@@ -171,7 +171,7 @@ def test_mixins_second_order(
     UnderTest(5, option_type).second_order(*mixin_call_args)
 
 
-@pytest.mark.parametrize("tree_class", tree_classes)
+@pytest.mark.parametrize("tree_class", forward_tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
 @pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
 @pytest.mark.parametrize(
