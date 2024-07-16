@@ -444,41 +444,6 @@ class BinomialTree(ValuationModel):
 
         return jnp.exp(up_steps * jnp.log(up_factors) + (self.steps - up_steps) * jnp.log(down_factors))
 
-    def _forecast(
-        self,
-        start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        time_to_expiration,
-        cost_of_carry,
-    ) -> jaxtyping.Float[jaxtyping.Array, "*#contracts n"]:
-        """Return the possible end values for the underlying.
-
-        Returns:
-            jnp.array: array with possible values of each contract in the last dimension
-        """
-
-        up_factors, down_factors = self._calc_factors(time_to_expiration, cost_of_carry)
-        dim = self.steps + 1
-        up_steps = jnp.triu(jnp.tile(jnp.arange(dim), (dim, 1)) - jnp.expand_dims(jnp.arange(dim), -1))
-        downsteps = jnp.triu(jnp.arange(dim) - up_steps)
-
-        up_transition_probability = self._calc_transition_up_probabilities(
-            up_factors, down_factors, time_to_expiration, cost_of_carry
-        )
-
-        node_returns = jnp.triu(
-            jnp.exp(
-                jnp.log(jnp.expand_dims(start_price, -1))
-                + up_steps * jnp.log(jnp.expand_dims(up_factors, -1))
-                + (downsteps) * jnp.log(jnp.expand_dims(down_factors, -1))
-            )
-        )
-        return (
-            jnp.triu(
-                jnp.power(up_transition_probability, up_steps) * jnp.power(1 - up_transition_probability, downsteps)
-            ),
-            node_returns,
-        )
-
     def _right_expand_step_values(self, broadcastable_to):
         return jnp.expand_dims(
             jnp.flip(jnp.arange(self.steps + 1)),
@@ -507,7 +472,7 @@ class BinomialTree(ValuationModel):
         p_up = (jnp.exp(cost_of_carry * (time_to_expiration / self.steps)) - down_factors) / (up_factors - down_factors)
         return p_up
 
-    def _transform_args_for_discounter(
+    def _transform_args_for_discounter(  # todo: refactor out, left-expansion deprecates this
         self,
         start_price,
         time_to_expiration,
@@ -765,90 +730,3 @@ def back_combine_paths_scan(
 def back_combine_paths_body(_, values_tuple):
 
     return *back_combine_path_probabilities(*values_tuple)[:-1], values_tuple[-1]
-
-
-def back_combine(
-    iter_from_end_time: int,
-    node_probabilities,
-    node_return_values,
-    up_transition_probability,
-):  # todo: type hints and shapes
-    # todo: refactor to avoid different sizes
-
-    num_nodes_start = node_probabilities.shape[-1] - iter_from_end_time
-    num_to_update = num_nodes_start - 1
-
-    path_probabilities = calc_path_probabilities(
-        node_probabilities,
-        steps := num_nodes_start - 1,
-    )
-
-    upward_path_probabilities, downward_path_probabilities = (
-        path_probabilities[..., :num_to_update],
-        path_probabilities[..., 1 : num_to_update + 1],
-    )
-    up_transition_probability = upward_path_probabilities / (
-        combined_path_probabilities := upward_path_probabilities + downward_path_probabilities
-    )
-
-    new_node_probabilities = combined_path_probabilities * comb(
-        steps - 1,
-        jnp.arange(upward_path_probabilities.shape[-1]),
-    )
-    implied_risk_free_rate = jnp.power(
-        jnp.multiply(node_probabilities[..., :], node_return_values[..., :]).sum(
-            -1,
-            keepdims=True,
-        ),
-        1.0 / (num_nodes_start - 1),
-    )
-
-    new_return_values = jnp.where(
-        new_node_probabilities > 0.0,
-        (
-            up_transition_probability * node_return_values[..., :num_to_update]
-            + (1 - up_transition_probability) * node_return_values[..., 1 : num_to_update + 1]
-        )
-        / implied_risk_free_rate,
-        0.0,
-    )
-    new_return_values = jnp.zeros(new_node_probabilities.shape).at[..., :num_to_update].set(new_return_values)
-
-    return (
-        jnp.zeros(node_probabilities.shape).at[..., :num_to_update].set(new_node_probabilities),
-        jnp.zeros(node_return_values.shape).at[..., :num_to_update].set(new_return_values),
-        jnp.zeros(node_probabilities.shape).at[..., :num_to_update].set(up_transition_probability),
-    )
-
-
-def calc_recombining_tree(
-    end_probabilities: jaxtyping.Float[jaxtyping.Array, "num_end_nodes *batch"],
-    end_values: jaxtyping.Float[jaxtyping.Array, "num_end_nodes *batch"],
-):
-    end_probabilities = (
-        jnp.zeros(end_probabilities.shape + (end_probabilities.shape[-1],)).at[..., :, -1].set(end_probabilities)
-    )
-    end_values = jnp.zeros(end_values.shape + (end_values.shape[-1],)).at[..., :, -1].set(end_values)
-    num_nodes = end_probabilities.shape[-1]
-
-    def tree_combine(i, values_tuple):
-        end_probabilities, end_values = values_tuple
-        next_end_probabilities, next_end_values, _ = back_combine(
-            i,
-            end_probabilities[..., :, source_idx := num_nodes - 1 - i],
-            end_values[..., :, source_idx],
-        )
-
-        return end_probabilities.at[..., :, update_idx := source_idx - 1].set(next_end_probabilities), end_values.at[
-            ..., :, update_idx
-        ].set(next_end_values)
-
-    return jax.lax.fori_loop(
-        0,
-        end_probabilities.shape[-1] - 1,
-        tree_combine,
-        (
-            end_probabilities,
-            end_values,
-        ),
-    )
