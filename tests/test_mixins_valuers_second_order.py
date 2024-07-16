@@ -1,4 +1,5 @@
 """Test all valuation classes with all mixins, valuers second order greeks."""
+
 import pytest
 
 from jax_russell import trees
@@ -41,5 +42,5 @@ def test_mixins_valuers_second_order(
     UnderTest(
         steps,
         option_type,
-        trees.AmericanDiscounter(steps, valuer_class(*valuer_args)) if option_type == "american" else None,
+        trees.AmericanDiscounter(valuer_class(*valuer_args)) if option_type == "american" else None,
     ).second_order(*mixin_call_args)

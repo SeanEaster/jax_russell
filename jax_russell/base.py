@@ -133,9 +133,7 @@ class ValuationModel(abc.ABC):
             residuals = expected - self(*bound_arguments.args, **bound_arguments.kwargs)
             return jnp.mean(residuals**2)
 
-        solver = jaxopt.BFGS(
-            objective,
-        )
+        solver = jaxopt.BFGS(objective)
         res = solver.run(
             init_params,
             expected=expected_option_values,
@@ -144,7 +142,7 @@ class ValuationModel(abc.ABC):
         return res
 
 
-class AsayMargineduturesOptionMixin:
+class AsayMarginedFuturesOptionMixin:
     """Assumes zero interest and zero cost of carry."""
 
     argnums = list(range(3))

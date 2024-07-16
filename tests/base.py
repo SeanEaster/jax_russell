@@ -1,4 +1,5 @@
 """Components shared across tests."""
+
 from jax import numpy as jnp
 
 import jax_russell.base
@@ -39,7 +40,7 @@ mixin_call_args = [
 mixin_classes = [
     jax_russell.base.StockOptionMixin,
     jax_russell.base.FuturesOptionMixin,
-    jax_russell.base.AsayMargineduturesOptionMixin,
+    jax_russell.base.AsayMarginedFuturesOptionMixin,
     jax_russell.base.StockOptionContinuousDividendMixin,
 ]
 haug_crr_full_values = jnp.array(

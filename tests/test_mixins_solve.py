@@ -9,13 +9,20 @@ from jax_russell.bsm import GeneralizedBlackScholesMerten
 from tests.base import mixin_call_args, mixin_classes, option_types
 from tests.trees import tree_classes
 
-implied_args = ["volatility", "time_to_expiration", "risk_free_rate", "cost_of_carry", "strike"]
+implied_args = [
+    "volatility",
+    "time_to_expiration",
+    "risk_free_rate",
+    "cost_of_carry",
+    "strike",
+]
 
 ABSOLUTE_TOLERANCES = {
     "strike": 1e-2,
     "risk_free_rate": 1e-4,
     "cost_of_carry": 1e-4,
     "time_to_expiration": 1.0 / 365.0,
+    "volatility": 1e-4,
 }
 
 
