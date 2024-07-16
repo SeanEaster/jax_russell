@@ -1,4 +1,5 @@
 """Test option value functions against example cases."""
+
 import pytest
 from jax import numpy as jnp
 
