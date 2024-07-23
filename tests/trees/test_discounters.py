@@ -38,7 +38,6 @@ def test_european_discounter():
 
 def test_european_discounter_expanded():
     """Test same example against expanded input."""
-
     actual = EuropeanDiscounter()(*EXPANDED_ARGS)
     assert jnp.allclose(
         actual,
@@ -69,7 +68,6 @@ def expand_args():
 
 def test_american_discounter_expanded():
     """Test EuropeanDiscounter against Rendleman Bartter (1979) example."""
-
     actual = AmericanDiscounter()(*EXPANDED_ARGS)
     assert actual.shape == RB_FOUR_STEP_EXPECTED.shape + (1,)
 
@@ -82,7 +80,6 @@ def test_american_discounter():
 
 def test_shapes_match():
     """Test that American, European discounters return same shapes for same inputs."""
-
     american_val = AmericanDiscounter()(*ARGS)
 
     european_val = EuropeanDiscounter()(*ARGS)

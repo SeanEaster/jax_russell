@@ -13,7 +13,7 @@ from jax_russell.trees import CRRBinomialTree, ExerciseValuer, MaxValuer, Rendle
 class StockOptionCRRTree(StockOptionMixin, CRRBinomialTree):  # type: ignore[misc]
     """Stock option CRR tree."""
 
-    __doc__ += "" if StockOptionMixin.__doc__ is None else StockOptionMixin.__doc__
+    # __doc__ += "" if StockOptionMixin.__doc__ is None else StockOptionMixin.__doc__
 
 
 class StockOptionContinuousDividendCRRTree(StockOptionContinuousDividendMixin, CRRBinomialTree):  # type: ignore[misc]

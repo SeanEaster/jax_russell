@@ -44,13 +44,3 @@ def test_rb(steps, option_type):
     )
     expected = jnp.expand_dims(rb_expected[option_type][steps], -1)
     assert jnp.allclose(actual, expected, atol=3e-2, rtol=3e-2)
-
-
-def test_forecast():
-    tree = StockOptionRBTree(12, "american")
-    for _ in tree.forecast_returns(
-        rb_volatility,
-        rb_time_to_expiration,
-        rb_risk_free_rate,
-    ):
-        print(_.shape)

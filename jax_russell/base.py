@@ -62,7 +62,7 @@ class ValuationModel(abc.ABC):
         """  # noqa
 
     @partial(jax.jit, static_argnums=0)
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> jaxtyping.Float:
         """Value arrays of options.
 
         By default, `__call__` checks its arguments against `value()` and passes them through.
@@ -127,17 +127,26 @@ class ValuationModel(abc.ABC):
         # inspect signature using bind to make sure all args have been passed
         signature.bind(**{**init_params, **kwargs})
 
+        # todo: if end_probabilities is in init_params, take log here...
+
         @jax.jit
         def objective(params, expected, kwargs):
+            # todo ...and softmax here
             bound_arguments = signature.bind(**{**params, **kwargs})
             residuals = expected - self(*bound_arguments.args, **bound_arguments.kwargs)
             return jnp.mean(residuals**2)
 
-        solver = jaxopt.BFGS(objective)
+        solver = jaxopt.LBFGSB(
+            objective,
+        )
         res = solver.run(
             init_params,
             expected=expected_option_values,
             kwargs=kwargs,
+            bounds=(
+                {k: jnp.zeros_like(v) for k, v in init_params.items()},
+                {k: jnp.ones_like(v) * jnp.inf for k, v in init_params.items()},
+            ),
         )
         return res
 
