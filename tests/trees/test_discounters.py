@@ -48,24 +48,6 @@ def test_european_discounter_expanded():
     assert actual.shape == RB_FOUR_STEP_EXPECTED.shape + (1,)
 
 
-def expand_args():
-    """Expand dimensions of Rendleman Bartter inputs."""
-    args = tuple(
-        [
-            jnp.expand_dims(_, -1)
-            for _ in [
-                RB_PRICE,
-                RB_STRIKE,
-                RB_TTE,
-                RB_RISK_FREE_RATE,
-                RB_IS_CALL,
-            ]
-        ]
-    )
-    args = jnp.broadcast_arrays(*args)
-    return args
-
-
 def test_american_discounter_expanded():
     """Test EuropeanDiscounter against Rendleman Bartter (1979) example."""
     actual = AmericanDiscounter()(*EXPANDED_ARGS)
