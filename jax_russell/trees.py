@@ -1,10 +1,12 @@
 """Tree models."""
 
 import abc
+import inspect
 from functools import partial
 from typing import Any, Callable, Tuple, Union
 
 import jax
+import jaxopt
 import jaxtyping
 import typeguard
 from jax import numpy as jnp
@@ -216,17 +218,6 @@ class Discounter(abc.ABC):
 class EuropeanDiscounter(Discounter):
     """Disounts final exercise values of binomial tree."""
 
-    def __init__(
-        self,
-        exercise_valuer: Callable = MaxValuer(),
-    ) -> None:
-        """
-
-        Args:
-            exercise_valuer (Callable, optional): Callable that takes `unadjusted_values` and returns exercise values. Defaults to MaxValuer().
-        """  # noqa
-        super().__init__(exercise_valuer)
-
     @typeguard.typechecked
     def __call__(
         self,
@@ -274,18 +265,6 @@ class AmericanDiscounter(Discounter):
     Attributes:
         discounter (Callable): A function that returns the value of exercising an option.
     """
-
-    def __init__(
-        self,
-        exercise_valuer: Callable = MaxValuer(),
-    ) -> None:
-        """
-
-        Args:
-            steps (int): number of steps used in the tree
-            exercise_valuer (Callable, optional): Callable that takes `unadjusted_values` and returns exercise values. Defaults to MaxValuer().
-        """  # noqa
-        super().__init__(exercise_valuer)
 
     def __call__(
         self,
@@ -748,6 +727,34 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
     ):
         probabilities, returns = self.forecast_returns(end_probabilities, end_underlying_returns)
         return probabilities, returns * start_price
+
+    def _solve_implied(self, expected_option_values, init_params, **kwargs):
+        signature = inspect.signature(self.__call__)  # todo: refactor into decorator?
+        signature.bind(**{**init_params, **kwargs})
+
+        @jax.jit
+        def objective(params, expected, kwargs):
+            # todo ...and softmax here
+            bound_arguments = signature.bind(**{**params, **kwargs})
+            residuals = expected - self(*bound_arguments.args, **bound_arguments.kwargs)
+            return jnp.mean(residuals**2)
+
+        solver = jaxopt
+
+    def solve_implied(self, expected_option_values, init_params, **kwargs):
+        assert "end_underlying_returns" not in init_params, "solving for `end_underlying_returns` is not supported"
+        if "end_probabilities" in init_params:
+            return self._solve_implied(
+                expected_option_values,
+                init_params,
+                **kwargs,
+            )
+
+        return super().solve_implied(
+            expected_option_values,
+            init_params,
+            **kwargs,
+        )
 
 
 def back_combine_path_probabilities(
