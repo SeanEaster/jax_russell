@@ -4,7 +4,7 @@ import abc
 import inspect
 from enum import Enum
 from functools import partial, wraps
-from typing import Callable, Protocol
+from typing import Callable, List, Tuple
 
 import jax
 import jaxopt
@@ -24,7 +24,15 @@ class AllArgs(Enum):
     continuous_dividend = "continuous_dividend"
 
 
-def broadcast_args(meth: Callable):
+def broadcast_args(meth: Callable) -> Callable:
+    """Wrap a function to broadcast its inputs (arrays) before call.
+
+    Args:
+        meth (Callable): A callable whose inputs are arrays.
+
+    Returns:
+        Callable: A callable that calls `jnp.broadcast_arrays` before passing to the original function
+    """
 
     @wraps(meth)
     def broadcasted(self, *args):
@@ -36,11 +44,16 @@ def broadcast_args(meth: Callable):
 def first_order_greeks(value_fn: Callable) -> Callable:
     """Decorate a value function to instead return first-order greeks.
 
+    The returned function will accept the same arguments, in the same order, as the orginal, and return derivatives in corresponding order.
+    E.g., if `start_price` is the first argument, delta will be the first value in the returned derivatives.
+    The returned function will have addition keyword argument `argnums`.
+    This can be used to select a subset of greeks by passing a list of their **1-indexed** indices and 0, which corresponds to `self`.
+
     Args:
-        value_fn (Callable): _description_
+        value_fn (Callable): A function or other callable that returns option values.
 
     Returns:
-        _type_: _description_
+        Callable: A callable that returns first derivatives of option values w.r.t. its inputs.
     """
 
     @partial(jax.jit, static_argnums=0)
@@ -56,7 +69,20 @@ def first_order_greeks(value_fn: Callable) -> Callable:
     return first_order
 
 
-def second_order_greeks(first_order: Callable):
+def second_order_greeks(first_order: Callable) -> Callable:
+    """Decorate a value function to instead return second-order greeks.
+
+    The returned function will accept the same arguments, in the same order, as the orginal, and return derivatives in corresponding order.
+    E.g., if `start_price` is the first argument, gamma will be the first value in the returned derivatives.
+    The returned function will have addition keyword argument `argnums`.
+    This can be used to select a subset of greeks by passing a list of their **1-indexed** indices and 0, which corresponds to `self`.
+
+    Args:
+        value_fn (Callable): A function or other callable that returns option values.
+
+    Returns:
+        Callable: A callable that returns second derivatives of option values w.r.t. its inputs.
+    """
 
     @partial(jax.jit, static_argnums=0)
     def second_order(*args, argnums=None, **kwargs):
@@ -72,19 +98,27 @@ def second_order_greeks(first_order: Callable):
     return second_order
 
 
-def greeks(cls: Callable) -> Callable:
+def greeks(cls):
+    """Decorate a class to support first- and second-order greeks.
+
+    Args:
+        cls (Callable): a class whose `__call__` method calculates option values
+
+    Returns:
+        cls: the passed class, decorated to add `first_order()` and `second_order()` methods
+    """
 
     cls.first_order = first_order_greeks(cls.__call__)
     cls.second_order = second_order_greeks(cls.first_order)
     return cls
 
 
-def zero_named_args(arg_names):
+def zero_named_args(arg_names: List[str]) -> Callable:
 
     if type(arg_names) is not list:
         arg_names = [arg_names]
 
-    def decorate(value_fn):
+    def decorate(value_fn: Callable) -> Callable:
         parent_signature, child_signature = signatures(value_fn, arg_names)
 
         def updated_value_fn(*args, **kwargs):
@@ -120,8 +154,18 @@ def futures_option(cls):
     return cls
 
 
-def stock_option_continuous_dividend(value_fn):
+def stock_option_continuous_dividend(value_fn: Callable) -> Callable:
+    """Decorate a Callable to use `risk_free_rate` - `continuous_dividend` as `cost_of_carry`.
 
+    The returned function will pass (`risk_free_rate` - `continuous_dividend`) as `cost_of_carry` to `value_fn` and return the result.
+    The returned function's signature is modified to replace `cost_of_carry` with `continuous_dividend`.
+
+    Args:
+        value_fn (Callable): A function that includes arguments `risk_free_rate` and `cost_of_carry`
+
+    Returns:
+        Callable: A modified function that uses `(risk_free_rate - continuous_dividend)` as `cost_of_carry`
+    """
     parent_signature = inspect.signature(value_fn)
     parameters = [
         (param.replace(name=AllArgs.continuous_dividend.value) if par_name == AllArgs.cost_of_carry.value else param)
@@ -146,12 +190,28 @@ def stock_option_continuous_dividend(value_fn):
 
 
 def stock_option_continuous_dividend_cls(cls):
+    """Decorate class to support continous dividends.
+
+    Returns:
+        cls: `cls` with `__call__` decorated with `stock_option_continuous_dividend`
+    """
 
     cls.__call__ = stock_option_continuous_dividend(cls.__call__)
     return cls
 
 
-def stock_option(value_fn):
+def stock_option(value_fn: Callable) -> Callable:
+    """Decorate a Callable to use to use `risk_free_rate` as `cost_of_carry`.
+
+    The returned function will pass `risk_free_rate` as both `risk_free_rate` and `cost_of_carry` to `value_fn` and return the result.
+    The returned function's signature is modified to remove `cost_of_carry`.
+
+    Args:
+        value_fn (Callable): A function that includes arguments `risk_free_rate` and `cost_of_carry`
+
+    Returns:
+        Callable: A modified function that uses `risk_free_rate` for `cost_of_carry`
+    """
 
     parent_signature, child_signature = signatures(
         value_fn,
@@ -173,7 +233,17 @@ def stock_option(value_fn):
     return updated_value_fn
 
 
-def signatures(value_fn, arg_names):
+def signatures(value_fn: Callable, arg_names: List[str]) -> Tuple[inspect.Signature, inspect.Signature]:
+    """Inspect signature and remove arguments.
+
+    Args:
+        value_fn (Callable): A function whose arguments include those listed in `arg_names`
+        arg_names (List[str]): A list of argument names found in `value_fn`
+
+    Returns:
+        Tuple[inspect.Signature, inspect.Signature]: (Original Signature, reduced signature that excludes `arg_names`)
+    """
+
     parent_signature = inspect.signature(value_fn)
     parameters = [param for par_name, param in parent_signature.parameters.items() if par_name not in arg_names]
 
@@ -182,31 +252,9 @@ def signatures(value_fn, arg_names):
 
 
 def stock_option_cls(cls):
+    """Decorate a class to use `risk_free_rate` as `cost_of_carry`."""
     cls.__call__ = stock_option(cls.__call__)
     return cls
-
-
-class ImplementsValueProtocol(Protocol):
-    """Protocol used to tell `mypy` mixins rely on another class to implement `value()`."""
-
-    def value(
-        self,
-        start_price: jaxtyping.Float[
-            jaxtyping.Array,
-            "#contracts",
-        ],
-        volatility: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        is_call: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        strike: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "#contracts"]:
-        """Should be implemented by another mixed in class.
-
-        Returns:
-            jnp.array: option contract values
-        """
 
 
 @greeks
