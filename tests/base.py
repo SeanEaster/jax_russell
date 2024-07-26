@@ -40,12 +40,7 @@ mixin_call_args = [
         haug_strike,
     ),
 ]
-mixin_classes = [
-    jax_russell.base.StockOptionMixin,
-    jax_russell.base.FuturesOptionMixin,
-    jax_russell.base.AsayMarginedFuturesOptionMixin,
-    jax_russell.base.StockOptionContinuousDividendMixin,
-]
+
 class_decorators = [
     jax_russell.base.stock_option_cls,
     jax_russell.base.futures_option,
