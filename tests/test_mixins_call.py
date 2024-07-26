@@ -1,7 +1,5 @@
 """Test all valuation classes with all mixins."""
 
-import copy
-
 import pytest
 from jax import numpy as jnp
 
@@ -33,9 +31,6 @@ def test_mixins_call(
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
     """
 
-    # class UnderTest(mixin_class, tree_class):
-    #     pass
-
     try:
         UnderTest = decorator(tree_class)
         undertest = UnderTest(5, option_type)
@@ -48,21 +43,33 @@ def test_mixins_call(
         tree_class.__call__ = tree_class.__call__.__wrapped__
 
 
-# @pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
-# def test_mixins_call_bsm(
-#     mixin_class,
-#     mixin_call_args,
-# ):
-#     """Test instantiation and call for all tree classes, option types and securuity mixins.
+@pytest.mark.parametrize(
+    "decorator,mixin_call_args",
+    zip(
+        base.class_decorators,
+        base.mixin_call_args,
+    ),
+)
+def test_mixins_call_bsm(
+    decorator,
+    mixin_call_args,
+):
+    """Test instantiation and call for all tree classes, option types and securuity mixins.
 
-#     Args:
-#         tree_class (trees.CRRBinomialTree): A CRRBinomialTree or child
-#         option_type (str): one of 'american' or 'european'
-#         mixin_class (Callable): a mixin class that implements __call__() for the tree
-#         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
-#     """
+    Args:
+        tree_class (trees.CRRBinomialTree): A CRRBinomialTree or child
+        option_type (str): one of 'american' or 'european'
+        mixin_class (Callable): a mixin class that implements __call__() for the tree
+        mixin_call_args (Tuple[Any]): args to pass tree.__call__()
+    """
 
-#     class UnderTest(mixin_class, GeneralizedBlackScholesMerten):
-#         pass
+    try:
+        UnderTest = decorator(GeneralizedBlackScholesMerten)
+        undertest = UnderTest()
+        actual = undertest(*mixin_call_args)
 
-#     assert jnp.greater(UnderTest()(*mixin_call_args), 0.0)
+        assert jnp.greater(actual, 0.0)
+    except Exception as e:
+        raise e
+    finally:
+        GeneralizedBlackScholesMerten.__call__ = GeneralizedBlackScholesMerten.__call__.__wrapped__

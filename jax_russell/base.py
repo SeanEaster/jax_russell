@@ -159,15 +159,7 @@ def stock_option(value_fn):
                 **{AllArgs.cost_of_carry.value: child_arguments.arguments[AllArgs.risk_free_rate.value]},
             }
         )
-        # parent_arguments.arguments[AllArgs.cost_of_carry.value] = child_arguments.arguments[
-        #     AllArgs.risk_free_rate.value
-        # ]
-
-        # value_fn.__signature__ = child_signa
-        # ture
         return value_fn(*parent_arguments.args)
-
-    # updated_value_fn.__signature__ = child_signature
 
     return updated_value_fn
 
@@ -211,11 +203,6 @@ class ImplementsValueProtocol(Protocol):
 @greeks
 class ValuationModel(abc.ABC):
     """Abstract class for valuation methods."""
-
-    # @abc.abstractmethod
-    # @partial(jax.jit, static_argnums=0)
-    # def __call__(self, *args, **kwargs) -> jaxtyping.Float:
-    #     """Value arrays of options."""
 
     def solve_implied(
         self,

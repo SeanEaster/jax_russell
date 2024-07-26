@@ -16,7 +16,7 @@ class GeneralizedBlackScholesMerten(ValuationModel):
 
     @partial(jax.jit, static_argnums=0)
     @typeguard.typechecked
-    def value(
+    def __call__(
         self,
         start_price: jaxtyping.Float[
             jaxtyping.Array,
