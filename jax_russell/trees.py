@@ -200,7 +200,16 @@ class Discounter(abc.ABC):
         self.exercise_valuer = exercise_valuer
 
     @abc.abstractmethod
-    def __call__(self, *args: Any, **kwds: Any) -> Any:  # noqa
+    def __call__(
+        self,
+        start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        end_probabilities: jaxtyping.Float[jaxtyping.Array, "num_nodes *#contracts"],
+        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "num_nodes *contracts"],
+        strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+    ) -> jaxtyping.Float[jaxtyping.Array, "*#contracts"]:
         """Must implement discounting and associated logic."""
 
 
@@ -288,7 +297,7 @@ class AmericanDiscounter(Discounter):
         risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
     ) -> Any:
-        """_summary_
+        """Discount from expiration, taking max of exercise and option value at each step.
 
         Args:
             start_price (jaxtyping.Float[jaxtyping.Array, ): _description_
