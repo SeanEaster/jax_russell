@@ -8,14 +8,16 @@ import jaxtyping
 import typeguard
 from jax.scipy.stats.norm import cdf
 
-from jax_russell.base import ValuationModel
+from jax_russell.base import ValuationModel, broadcast_args, greeks
 
 
+@greeks
 class GeneralizedBlackScholesMerten(ValuationModel):
     """Generalized Black-Scholes-Merten for European options."""
 
     @partial(jax.jit, static_argnums=0)
     @typeguard.typechecked
+    @broadcast_args
     def __call__(
         self,
         start_price: jaxtyping.Float[

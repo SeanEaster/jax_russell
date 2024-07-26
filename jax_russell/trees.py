@@ -10,7 +10,7 @@ import typeguard
 from jax import numpy as jnp
 from jax.scipy.special import gammaln
 
-from jax_russell.base import ValuationModel
+from jax_russell.base import ValuationModel, broadcast_args
 
 
 # binomial as suggested here https://github.com/google/jax/discussions/7044
@@ -222,8 +222,8 @@ class EuropeanDiscounter(Discounter):
     def __call__(
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        end_probabilities: jaxtyping.Float[jaxtyping.Array, "*#contracts n"],
-        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "*contracts n"],
+        end_probabilities: jaxtyping.Float[jaxtyping.Array, "num_nodes *#contracts"],
+        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "num_nodes *contracts"],
         strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
@@ -243,7 +243,7 @@ class EuropeanDiscounter(Discounter):
             jnp.array: discounted expected value of each contract at expiration
         """  # noqa
 
-        return (
+        weighted_discounted_exercise_values = (
             jnp.exp(-risk_free_rate * time_to_expiration)
             * end_probabilities
             * self.exercise_valuer(
@@ -251,7 +251,9 @@ class EuropeanDiscounter(Discounter):
                 strike,
                 is_call,
             )
-        ).sum(0)
+        )
+
+        return weighted_discounted_exercise_values.sum(0)
 
 
 class AmericanDiscounter(Discounter):
@@ -500,6 +502,7 @@ class ForwardForecastTree(BinomialTree):
         return probabilities, returns * start_price
 
     @partial(jax.jit, static_argnums=0)
+    @broadcast_args
     def __call__(
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
@@ -546,6 +549,7 @@ class CRRBinomialTree(ForwardForecastTree):
 
     @partial(jax.jit, static_argnums=0)
     @typeguard.typechecked
+    @broadcast_args
     def __call__(
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
@@ -697,11 +701,12 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
     """Value options using implied trees over a single maturity as described in Rubinstein 1994."""
 
     @partial(jax.jit, static_argnums=0)
-    def value(
+    @broadcast_args
+    def __call__(
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        end_probabilities: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        end_probabilities: jaxtyping.Float[jaxtyping.Array, "num_end_nodes *#contracts"],
+        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, " num_end_nodes *#contracts"],
         time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],

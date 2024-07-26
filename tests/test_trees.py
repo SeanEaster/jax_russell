@@ -5,8 +5,8 @@ from typing import Callable, Tuple
 import pytest
 from jax import numpy as jnp
 
-from jax_russell import trees
-from tests.base import mixin_classes
+from jax_russell import greeks, trees
+from tests.base import class_decorators
 
 forward_tree_classes = [
     trees.CRRBinomialTree,
@@ -101,11 +101,11 @@ def test_call(tree_class, option_type: str):
 
 @pytest.mark.parametrize("tree_class", forward_tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
-@pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
+@pytest.mark.parametrize("decorator,mixin_call_args", zip(class_decorators, mixin_call_args))
 def test_mixins_call(
     tree_class,
     option_type,
-    mixin_class,
+    decorator,
     mixin_call_args,
 ):
     """Test instantiation and call for all tree classes, option types and securuity mixins.
@@ -113,11 +113,13 @@ def test_mixins_call(
     Args:
         tree_class (trees.CRRBinomialTree): A CRRBinomialTree or child
         option_type (str): one of 'american' or 'european'
-        mixin_class (Callable): a mixin class that implements __call__() for the tree
+        decorator (Callable): a mixin class that implements __call__() for the tree
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
     """
 
-    class UnderTest(mixin_class, tree_class):
+    @greeks
+    @decorator
+    class UnderTest(tree_class):
         pass
 
     UnderTest(5, option_type)(*mixin_call_args)
@@ -125,11 +127,11 @@ def test_mixins_call(
 
 @pytest.mark.parametrize("tree_class", forward_tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
-@pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
+@pytest.mark.parametrize("decorator,mixin_call_args", zip(class_decorators, mixin_call_args))
 def test_mixins_first_order(
     tree_class,
     option_type,
-    mixin_class,
+    decorator,
     mixin_call_args,
 ):
     """Test instantiation and first_order() for all tree classes, option types and securuity mixins.
@@ -137,11 +139,13 @@ def test_mixins_first_order(
     Args:
         tree_class (trees.CRRBinomialTree): A CRRBinomialTree or child
         option_type (str): one of 'american' or 'european'
-        mixin_class (Callable): a mixin class that implements __call__() for the tree
+        decorator (Callable): a mixin class that implements __call__() for the tree
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
     """
 
-    class UnderTest(mixin_class, tree_class):
+    @greeks
+    @decorator
+    class UnderTest(tree_class):
         pass
 
     UnderTest(5, option_type).first_order(*mixin_call_args)
@@ -149,11 +153,11 @@ def test_mixins_first_order(
 
 @pytest.mark.parametrize("tree_class", forward_tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
-@pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
+@pytest.mark.parametrize("decorator,mixin_call_args", zip(class_decorators, mixin_call_args))
 def test_mixins_second_order(
     tree_class,
     option_type,
-    mixin_class,
+    decorator,
     mixin_call_args,
 ):
     """Test instantiation and call for all tree classes, option types and securuity mixins.
@@ -161,11 +165,13 @@ def test_mixins_second_order(
     Args:
         tree_class (trees.CRRBinomialTree): A CRRBinomialTree or child
         option_type (str): one of 'american' or 'european'
-        mixin_class (Callable): a mixin class that implements __call__() for the tree
+        decorator (Callable): a mixin class that implements __call__() for the tree
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
     """
 
-    class UnderTest(mixin_class, tree_class):
+    @greeks
+    @decorator
+    class UnderTest(tree_class):
         pass
 
     UnderTest(5, option_type).second_order(*mixin_call_args)
@@ -173,7 +179,7 @@ def test_mixins_second_order(
 
 @pytest.mark.parametrize("tree_class", forward_tree_classes)
 @pytest.mark.parametrize("option_type", option_types)
-@pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
+@pytest.mark.parametrize("decorator,mixin_call_args", zip(class_decorators, mixin_call_args))
 @pytest.mark.parametrize(
     "valuer_class,valuer_args",
     [
@@ -183,7 +189,7 @@ def test_mixins_second_order(
 def test_mixins_valuers_second_order(
     tree_class: Callable,
     option_type: str,
-    mixin_class: Callable,
+    decorator: Callable,
     mixin_call_args: Tuple,
     valuer_class: Callable,
     valuer_args: Tuple,
@@ -193,13 +199,15 @@ def test_mixins_valuers_second_order(
     Args:
         tree_class (trees.CRRBinomialTree): class under test
         option_type (str): Option class, i.e. European or Americn
-        mixin_class (Callable): mix-in class under test
+        decorator (Callable): mix-in class under test
         mixin_call_args (Tuple[Any]): arguments passed to mixin class
         valuer_class (Callable): valuer class under test
         valuer_args (Tuple[Any]): arguments passed to valuer_class
     """
 
-    class UnderTest(mixin_class, tree_class):  # type: ignore
+    @greeks
+    @decorator
+    class UnderTest(tree_class):  # type: ignore
         pass
 
     steps = 5

@@ -2,18 +2,24 @@
 
 import pytest
 
+from jax_russell.base import greeks
 from jax_russell.bsm import GeneralizedBlackScholesMerten
-from tests.base import mixin_call_args, mixin_classes, option_types
-from tests.trees import forward_tree_classes
+from tests import base, trees
 
 
-@pytest.mark.parametrize("tree_class", forward_tree_classes)
-@pytest.mark.parametrize("option_type", option_types)
-@pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
+@pytest.mark.parametrize("tree_class", trees.forward_tree_classes)
+@pytest.mark.parametrize("option_type", base.option_types)
+@pytest.mark.parametrize(
+    "decorator,mixin_call_args",
+    zip(
+        base.class_decorators,
+        base.mixin_call_args,
+    ),
+)
 def test_mixins_first_order(
     tree_class,
     option_type,
-    mixin_class,
+    decorator,
     mixin_call_args,
 ):
     """Test instantiation and first_order() for all tree classes, option types and securuity mixins.
@@ -25,15 +31,17 @@ def test_mixins_first_order(
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
     """
 
-    class UnderTest(mixin_class, tree_class):
+    @greeks
+    @decorator
+    class UnderTest(tree_class):  # type: ignore
         pass
 
     UnderTest(5, option_type).first_order(*mixin_call_args)
 
 
-@pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
+@pytest.mark.parametrize("decorator,mixin_call_args", zip(base.class_decorators, base.mixin_call_args))
 def test_mixins_first_order_bsm(
-    mixin_class,
+    decorator,
     mixin_call_args,
 ):
     """Test instantiation and first_order() for all tree classes, option types and securuity mixins.
@@ -45,7 +53,9 @@ def test_mixins_first_order_bsm(
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
     """
 
-    class UnderTest(mixin_class, GeneralizedBlackScholesMerten):
+    @greeks
+    @decorator
+    class UnderTest(GeneralizedBlackScholesMerten):
         pass
 
     UnderTest().first_order(*mixin_call_args)

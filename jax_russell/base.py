@@ -24,6 +24,15 @@ class AllArgs(Enum):
     continuous_dividend = "continuous_dividend"
 
 
+def broadcast_args(meth: Callable):
+
+    @wraps(meth)
+    def broadcasted(self, *args):
+        return meth(self, *jnp.broadcast_arrays(*args))
+
+    return broadcasted
+
+
 def first_order_greeks(value_fn: Callable) -> Callable:
     """Decorate a value function to instead return first-order greeks.
 
@@ -35,12 +44,12 @@ def first_order_greeks(value_fn: Callable) -> Callable:
     """
 
     @partial(jax.jit, static_argnums=0)
-    def first_order(self, *args, argnums=None, **kwargs):
+    def first_order(*args, argnums=None, **kwargs):
 
         return jnp.hstack(
             jax.jacfwd(
                 value_fn,
-                range(len(args)) if argnums is None else argnums,
+                range(1, len(args)) if argnums is None else argnums,
             )(*args, **kwargs)
         )
 
@@ -55,7 +64,7 @@ def second_order_greeks(first_order: Callable):
         return jnp.concatenate(
             jax.jacfwd(
                 first_order,
-                range(len(args)) if argnums is None else argnums,
+                range(1, len(args)) if argnums is None else argnums,
             )(*args, **kwargs),
             axis=-1,
         )
@@ -78,7 +87,6 @@ def zero_named_args(arg_names):
     def decorate(value_fn):
         parent_signature, child_signature = signatures(value_fn, arg_names)
 
-        @wraps(value_fn)
         def updated_value_fn(*args, **kwargs):
             child_arguments = child_signature.bind(*args)
             shared_params = {k: v for k, v in child_arguments.arguments.items() if k in parent_signature.parameters}
@@ -91,6 +99,7 @@ def zero_named_args(arg_names):
             )
             return value_fn(*parent_arguments.args)
 
+        updated_value_fn.__signature__ = child_signature
         return updated_value_fn
 
     return decorate
@@ -121,7 +130,6 @@ def stock_option_continuous_dividend(value_fn):
 
     child_signature = parent_signature.replace(parameters=parameters)
 
-    @wraps(value_fn)
     def updated_value_fn(*args):
         child_arguments = child_signature.bind(*args)
         shared_params = {k: v for k, v in child_arguments.arguments.items() if k in parent_signature.parameters}
@@ -133,6 +141,7 @@ def stock_option_continuous_dividend(value_fn):
 
         return value_fn(*parent_arguments.args)
 
+    updated_value_fn.__signature__ = child_signature
     return updated_value_fn
 
 
@@ -149,7 +158,6 @@ def stock_option(value_fn):
         arg_names=AllArgs.cost_of_carry.value,
     )
 
-    @wraps(value_fn)
     def updated_value_fn(*args):
         child_arguments = child_signature.bind(*args)
         shared_params = {k: v for k, v in child_arguments.arguments.items() if k in parent_signature.parameters}
@@ -161,6 +169,7 @@ def stock_option(value_fn):
         )
         return value_fn(*parent_arguments.args)
 
+    updated_value_fn.__signature__ = child_signature
     return updated_value_fn
 
 

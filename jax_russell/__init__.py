@@ -5,7 +5,7 @@ __email__ = 'sean@easter.ai'
 __version__ = '0.2.0'
 
 
-from jax_russell.base import ValuationModel, stock_option_cls, stock_option_continuous_dividend_cls
+from jax_russell.base import ValuationModel, greeks, stock_option_cls, stock_option_continuous_dividend_cls
 from jax_russell.bsm import GeneralizedBlackScholesMerten
 from jax_russell.trees import CRRBinomialTree, ExerciseValuer, MaxValuer, RendlemanBartterBinomialTree, SoftplusValuer
 
@@ -30,6 +30,8 @@ class StockOptionContinuousDividendRBTree(RendlemanBartterBinomialTree):  # type
     """Stock option Rendleman Bartter tree with a continuous dividend."""
 
 
+@greeks
+@stock_option_cls
 class StockOptionBSM(GeneralizedBlackScholesMerten):  # type: ignore[misc]
     """Stock option Black Scholes Merten valuation."""
 

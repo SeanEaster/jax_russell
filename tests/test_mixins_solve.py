@@ -5,9 +5,9 @@ import inspect
 import pytest
 from jax import numpy as jnp
 
+from jax_russell.base import greeks
 from jax_russell.bsm import GeneralizedBlackScholesMerten
-from tests.base import mixin_call_args, mixin_classes, option_types
-from tests.trees import forward_tree_classes
+from tests import base, trees
 
 implied_args = [
     "volatility",
@@ -26,17 +26,17 @@ ABSOLUTE_TOLERANCES = {
 }
 
 
-@pytest.mark.parametrize("tree_class", forward_tree_classes)
-@pytest.mark.parametrize("option_type", option_types)
+@pytest.mark.parametrize("tree_class", trees.forward_tree_classes)
+@pytest.mark.parametrize("option_type", base.option_types)
 @pytest.mark.parametrize(
-    "mixin_class,mixin_call_args",
-    zip(mixin_classes, mixin_call_args),
+    "decorator,mixin_call_args",
+    zip(base.class_decorators, base.mixin_call_args),
 )
 @pytest.mark.parametrize("implied_arg", implied_args)
 def test_mixins_solve(
     tree_class,
     option_type,
-    mixin_class,
+    decorator,
     mixin_call_args,
     implied_arg,
 ):
@@ -50,8 +50,10 @@ def test_mixins_solve(
         implied_arg: argument to solve for
     """
 
-    class UnderTest(mixin_class, tree_class):
+    class UnderTest(tree_class):
         pass
+
+    UnderTest = greeks(decorator(UnderTest))
 
     under_test = UnderTest(5, option_type)
     signature = inspect.signature(under_test)
@@ -59,7 +61,7 @@ def test_mixins_solve(
 
     arg_names = list(signature.parameters.keys())
     if implied_arg not in arg_names:
-        pytest.skip(f"arg {implied_arg} not in call signature for mixed classes {tree_class} and {mixin_class}")
+        pytest.skip(f"arg {implied_arg} not in call signature for mixed classes {tree_class} and {decorator}")
     call_args = list(mixin_call_args)
     i = arg_names.index(implied_arg)
     expected = call_args.pop(i)
@@ -78,10 +80,10 @@ def test_mixins_solve(
     )
 
 
-@pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
+@pytest.mark.parametrize("decorator,mixin_call_args", zip(base.class_decorators, base.mixin_call_args))
 @pytest.mark.parametrize("implied_arg", implied_args)
 def test_mixins_solve_bsm(
-    mixin_class,
+    decorator,
     mixin_call_args,
     implied_arg,
 ):
@@ -94,7 +96,9 @@ def test_mixins_solve_bsm(
         implied_arg: argument to solve for
     """
 
-    class UnderTest(mixin_class, GeneralizedBlackScholesMerten):
+    @greeks
+    @decorator
+    class UnderTest(GeneralizedBlackScholesMerten):
         pass
 
     under_test = UnderTest()
@@ -103,7 +107,7 @@ def test_mixins_solve_bsm(
     arg_names = list(signature.parameters.keys())
     if implied_arg not in arg_names:
         pytest.skip(
-            f"arg {implied_arg} not in call signature for mixed classes GeneralizedBlackScholesMerten and {mixin_class}"
+            f"arg {implied_arg} not in call signature for mixed classes GeneralizedBlackScholesMerten and {decorator}"
         )
 
     call_args = list(mixin_call_args)

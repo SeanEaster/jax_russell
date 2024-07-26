@@ -31,16 +31,14 @@ def test_mixins_call(
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
     """
 
-    try:
-        UnderTest = decorator(tree_class)
-        undertest = UnderTest(5, option_type)
-        actual = undertest(*mixin_call_args)
+    @decorator
+    class UnderTest(tree_class):  # type: ignore
+        pass
 
-        assert jnp.greater(actual, 0.0)
-    except Exception as e:
-        raise e
-    finally:
-        tree_class.__call__ = tree_class.__call__.__wrapped__
+    undertest = UnderTest(5, option_type)
+    actual = undertest(*mixin_call_args)
+
+    assert jnp.greater(actual, 0.0)
 
 
 @pytest.mark.parametrize(
@@ -63,13 +61,11 @@ def test_mixins_call_bsm(
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
     """
 
-    try:
-        UnderTest = decorator(GeneralizedBlackScholesMerten)
-        undertest = UnderTest()
-        actual = undertest(*mixin_call_args)
+    @decorator
+    class UnderTest(GeneralizedBlackScholesMerten):  # type: ignore
+        pass
 
-        assert jnp.greater(actual, 0.0)
-    except Exception as e:
-        raise e
-    finally:
-        GeneralizedBlackScholesMerten.__call__ = GeneralizedBlackScholesMerten.__call__.__wrapped__
+    undertest = UnderTest()
+    actual = undertest(*mixin_call_args)
+
+    assert jnp.greater(actual, 0.0)
