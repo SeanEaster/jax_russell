@@ -500,7 +500,7 @@ class ForwardForecastTree(BinomialTree):
         return probabilities, returns * start_price
 
     @partial(jax.jit, static_argnums=0)
-    def value(
+    def __call__(
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         volatility: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
@@ -546,7 +546,7 @@ class CRRBinomialTree(ForwardForecastTree):
 
     @partial(jax.jit, static_argnums=0)
     @typeguard.typechecked
-    def value(
+    def __call__(
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         volatility: jaxtyping.Float[jaxtyping.Array, "*#contracts"],

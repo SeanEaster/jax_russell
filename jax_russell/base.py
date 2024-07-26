@@ -2,13 +2,187 @@
 
 import abc
 import inspect
-from functools import partial
-from typing import Protocol
+from enum import Enum
+from functools import partial, wraps
+from typing import Callable, Protocol
 
 import jax
 import jaxopt
 import jaxtyping
 from jax import numpy as jnp
+
+
+class AllArgs(Enum):
+
+    start_price = "start_price"
+    volatility = "volatility"
+    time_to_expiration = "time_to_expiration"
+    is_call = "is_call"
+    strike = "strike"
+    risk_free_rate = "risk_free_rate"
+    cost_of_carry = "cost_of_carry"
+    continuous_dividend = "continuous_dividend"
+
+
+def first_order_greeks(value_fn: Callable) -> Callable:
+    """Decorate a value function to instead return first-order greeks.
+
+    Args:
+        value_fn (Callable): _description_
+
+    Returns:
+        _type_: _description_
+    """
+
+    @partial(jax.jit, static_argnums=0)
+    def first_order(self, *args, argnums=None, **kwargs):
+
+        return jnp.hstack(
+            jax.jacfwd(
+                value_fn,
+                range(len(args)) if argnums is None else argnums,
+            )(*args, **kwargs)
+        )
+
+    return first_order
+
+
+def second_order_greeks(first_order: Callable):
+
+    @partial(jax.jit, static_argnums=0)
+    def second_order(*args, argnums=None, **kwargs):
+
+        return jnp.concatenate(
+            jax.jacfwd(
+                first_order,
+                range(len(args)) if argnums is None else argnums,
+            )(*args, **kwargs),
+            axis=-1,
+        )
+
+    return second_order
+
+
+def greeks(cls: Callable) -> Callable:
+
+    cls.first_order = first_order_greeks(cls.__call__)
+    cls.second_order = second_order_greeks(cls.first_order)
+    return cls
+
+
+def zero_named_args(arg_names):
+
+    if type(arg_names) is not list:
+        arg_names = [arg_names]
+
+    def decorate(value_fn):
+        parent_signature, child_signature = signatures(value_fn, arg_names)
+
+        @wraps(value_fn)
+        def updated_value_fn(*args, **kwargs):
+            child_arguments = child_signature.bind(*args)
+            shared_params = {k: v for k, v in child_arguments.arguments.items() if k in parent_signature.parameters}
+            static_args = {arg_name: jnp.zeros(1) for arg_name in arg_names}
+            parent_arguments = parent_signature.bind(
+                **{
+                    **shared_params,
+                    **static_args,
+                }
+            )
+            return value_fn(*parent_arguments.args)
+
+        return updated_value_fn
+
+    return decorate
+
+
+def asay_margined(cls):
+    cls.__call__ = zero_named_args(
+        [
+            AllArgs.cost_of_carry.value,
+            AllArgs.risk_free_rate.value,
+        ]
+    )(cls.__call__)
+    return cls
+
+
+def futures_option(cls):
+    cls.__call__ = zero_named_args(AllArgs.cost_of_carry.value)(cls.__call__)
+    return cls
+
+
+def stock_option_continuous_dividend(value_fn):
+
+    parent_signature = inspect.signature(value_fn)
+    parameters = [
+        (param.replace(name=AllArgs.continuous_dividend.value) if par_name == AllArgs.cost_of_carry.value else param)
+        for par_name, param in parent_signature.parameters.items()
+    ]
+
+    child_signature = parent_signature.replace(parameters=parameters)
+
+    @wraps(value_fn)
+    def updated_value_fn(*args):
+        child_arguments = child_signature.bind(*args)
+        shared_params = {k: v for k, v in child_arguments.arguments.items() if k in parent_signature.parameters}
+        parent_arguments = parent_signature.bind_partial(**shared_params)
+        parent_arguments.arguments[AllArgs.cost_of_carry.value] = (
+            child_arguments.arguments[AllArgs.risk_free_rate.value]
+            - child_arguments.arguments[AllArgs.continuous_dividend.value]
+        )
+
+        return value_fn(*parent_arguments.args)
+
+    return updated_value_fn
+
+
+def stock_option_continuous_dividend_cls(cls):
+
+    cls.__call__ = stock_option_continuous_dividend(cls.__call__)
+    return cls
+
+
+def stock_option(value_fn):
+
+    parent_signature, child_signature = signatures(
+        value_fn,
+        arg_names=AllArgs.cost_of_carry.value,
+    )
+
+    @wraps(value_fn)
+    def updated_value_fn(*args):
+        child_arguments = child_signature.bind(*args)
+        shared_params = {k: v for k, v in child_arguments.arguments.items() if k in parent_signature.parameters}
+        parent_arguments = parent_signature.bind(
+            **{
+                **shared_params,
+                **{AllArgs.cost_of_carry.value: child_arguments.arguments[AllArgs.risk_free_rate.value]},
+            }
+        )
+        # parent_arguments.arguments[AllArgs.cost_of_carry.value] = child_arguments.arguments[
+        #     AllArgs.risk_free_rate.value
+        # ]
+
+        # value_fn.__signature__ = child_signa
+        # ture
+        return value_fn(*parent_arguments.args)
+
+    # updated_value_fn.__signature__ = child_signature
+
+    return updated_value_fn
+
+
+def signatures(value_fn, arg_names):
+    parent_signature = inspect.signature(value_fn)
+    parameters = [param for par_name, param in parent_signature.parameters.items() if par_name not in arg_names]
+
+    child_signature = parent_signature.replace(parameters=parameters)
+    return parent_signature, child_signature
+
+
+def stock_option_cls(cls):
+    cls.__call__ = stock_option(cls.__call__)
+    return cls
 
 
 class ImplementsValueProtocol(Protocol):
@@ -34,76 +208,14 @@ class ImplementsValueProtocol(Protocol):
         """
 
 
+@greeks
 class ValuationModel(abc.ABC):
     """Abstract class for valuation methods."""
 
-    argnums = list(range(5))
-
-    @abc.abstractmethod
-    @partial(jax.jit, static_argnums=0)
-    def value(
-        self,
-        start_price: jaxtyping.Float[
-            jaxtyping.Array,
-            "#contracts",
-        ],
-        volatility: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        is_call: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        strike: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "#contracts"]:
-        """Calculate the value of an option.
-
-        This method is used internally by `__call__()`, and should return the value of options.
-        By default, `__call__()` is a pass through to `value()`, but many available mixins overwrite this behavior to pass arguments to `value()`.
-        In these cases, this allows the single, general method `value()` to implement valuations, while leveraging `__call__()` for security-specific argument logic and meaningful autodifferentiation.
-        """  # noqa
-
-    @partial(jax.jit, static_argnums=0)
-    def __call__(self, *args, **kwargs) -> jaxtyping.Float:
-        """Value arrays of options.
-
-        By default, `__call__` checks its arguments against `value()` and passes them through.
-
-        Returns:
-            jnp.array: option values
-        """
-        inspect.signature(self.value).bind(*args, **kwargs)
-        return self.value(*jnp.broadcast_arrays(*args), **kwargs)
-
-    @partial(jax.jit, static_argnums=0)
-    def first_order(self, *args, **kwargs):
-        """Automatically calculate first-order greeks.
-
-        Returns:
-            jnp.array: first-order derivatives of option values
-        """
-        inspect.signature(self).bind(*args, **kwargs)
-        return jnp.hstack(
-            jax.jacfwd(
-                self,
-                range(len(args)) if self.argnums is None else self.argnums,
-            )(*args, **kwargs)
-        )
-
-    @partial(jax.jit, static_argnums=0)
-    def second_order(self, *args, **kwargs):
-        """Automatically calculate second-order greeks.
-
-        Returns:
-            jnp.array: second-order derivatives of option values
-        """
-        inspect.signature(self).bind(*args, **kwargs)
-        return jnp.concatenate(
-            jax.jacfwd(
-                self.first_order,
-                range(len(args)) if self.argnums is None else self.argnums,
-                # self.argnums,
-            )(*args, **kwargs),
-            axis=-1,
-        )
+    # @abc.abstractmethod
+    # @partial(jax.jit, static_argnums=0)
+    # def __call__(self, *args, **kwargs) -> jaxtyping.Float:
+    #     """Value arrays of options."""
 
     def solve_implied(
         self,
@@ -123,7 +235,7 @@ class ValuationModel(abc.ABC):
         Returns:
             params, state: the parameters and state returned by a `jaxopt` optimizer `run()`
         """  # noqa: E501
-        signature = inspect.signature(self.__call__)
+        signature = inspect.signature(self.__call__)  # todo: refactor into decorator?
         # inspect signature using bind to make sure all args have been passed
         signature.bind(**{**init_params, **kwargs})
 

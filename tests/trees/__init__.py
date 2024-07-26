@@ -2,4 +2,7 @@
 
 from jax_russell import trees
 
-forward_tree_classes = [trees.CRRBinomialTree, trees.RendlemanBartterBinomialTree]
+forward_tree_classes = [
+    trees.CRRBinomialTree,
+    trees.RendlemanBartterBinomialTree,
+]
