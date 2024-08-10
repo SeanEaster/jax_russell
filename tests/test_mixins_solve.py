@@ -244,34 +244,126 @@ def expand_for_broadcasting(*args):
     )
 
 
-def test_feasible():
+def test_feasible(qqq_fitted_values, qqq_bid_ask):
     """Test that an implied tree can derive one set of implied probabilities from a set of options."""
+
+    assert jnp.all(qqq_bid_ask[0] < qqq_fitted_values) and jnp.all(qqq_fitted_values <= qqq_bid_ask[1])
+
+
+@pytest.fixture
+def qqq_fitted_values(
+    qqq_volatility,
+    qqq_start_price,
+    qqq_strike,
+    qqq_values,
+    qqq_bid_ask,
+    qqq_time_to_expiration,
+    qqq_risk_free_rate,
+    qqq_is_call,
+):
     steps = 251
 
     tree_type = "american"
     base_tree = StockOptionCRRTree(steps, tree_type)
     implied_tree = RubinsteinImpliedBinomialTree(steps, tree_type)
 
-    start_price = jnp.array([440.0])
-    volatility = jnp.array(
-        [
-            0.4571,
-            0.4367,
-            0.4177,
-            0.4037,
-            0.3859,
-            0.3691,
-            0.3546,
-            0.3409,
-            0.3269,
-            0.3120,
-            0.3004,
-            0.2882,
-            0.2777,
-        ]
-    )
-    volatility = jnp.log(volatility + 1.0)
+    volatility = base_tree.solve_implied(
+        qqq_bid_ask.mean(0),
+        {AllArgs.volatility.value: qqq_volatility},
+        time_to_expiration=qqq_time_to_expiration,
+        is_call=qqq_is_call,
+        risk_free_rate=qqq_risk_free_rate,
+        strike=qqq_strike,
+        start_price=qqq_start_price,
+    ).params[AllArgs.volatility.value]
 
+    is_call, strike = expand_for_broadcasting(
+        qqq_is_call,
+        qqq_strike,
+    )
+    init_probs, returns = base_tree._calc_end_nodes(
+        volatility,
+        qqq_time_to_expiration,
+        qqq_risk_free_rate,
+    )
+
+    returns = returns[:, 0]
+    init_probs = init_probs[:, 0]
+    fitted_probs = implied_tree.feasible_init(
+        init_probs,
+        qqq_values,
+        barrier_const=1,
+        time_to_expiration=qqq_time_to_expiration,
+        is_call=qqq_is_call,
+        risk_free_rate=qqq_risk_free_rate,
+        strike=strike,
+        start_price=qqq_start_price,
+        end_underlying_returns=returns,
+        cost_of_carry=qqq_risk_free_rate,
+    )
+
+    fitted_values = implied_tree(
+        qqq_start_price,
+        fitted_probs,
+        returns,
+        qqq_time_to_expiration,
+        qqq_risk_free_rate,
+        qqq_risk_free_rate,
+        is_call,
+        strike,
+    )
+
+    return fitted_values
+
+
+@pytest.fixture
+def qqq_is_call():
+    is_call = jnp.array(1.0)
+    return is_call
+
+
+@pytest.fixture
+def qqq_risk_free_rate():
+    risk_free_rate = jnp.log(jnp.array(1.05))
+    return risk_free_rate
+
+
+@pytest.fixture
+def qqq_time_to_expiration():
+    time_to_expiration = jnp.array(1.0 / 12.0)
+    return time_to_expiration
+
+
+@pytest.fixture
+def qqq_values(qqq_bid_ask):
+    values = jnp.expand_dims(qqq_bid_ask, 1)
+
+    return values
+
+
+@pytest.fixture
+def qqq_bid_ask():
+    return jnp.array(
+        [
+            [46.07, 46.40],
+            [41.76, 41.99],
+            [37.50, 37.71],
+            [33.52, 33.74],
+            [29.53, 29.72],
+            [25.70, 25.88],
+            [22.16, 22.31],
+            [18.84, 18.97],
+            [15.69, 15.82],
+            [12.77, 12.86],
+            [10.25, 10.33],
+            [7.94, 8.05],
+            [6.06, 6.14],
+        ]
+    ).T
+
+
+@pytest.fixture
+def qqq_strike():
     strike = jnp.array(
         [
             400.0,
@@ -289,78 +381,36 @@ def test_feasible():
             460.0,
         ]
     )
-    values = jnp.expand_dims(
-        bid_ask := jnp.array(
-            [
-                [46.07, 46.40],
-                [41.76, 41.99],
-                [37.50, 37.71],
-                [33.52, 33.74],
-                [29.53, 29.72],
-                [25.70, 25.88],
-                [22.16, 22.31],
-                [18.84, 18.97],
-                [15.69, 15.82],
-                [12.77, 12.86],
-                [10.25, 10.33],
-                [7.94, 8.05],
-                [6.06, 6.14],
-            ]
-        ).T,
-        1,
-    )
-    time_to_expiration = jnp.array(1.0 / 12.0)
-    risk_free_rate = jnp.log(jnp.array(1.05))
-    # is_call = jnp.arange(2).astype(jnp.float64)
-    is_call = jnp.array(1.0)
-    volatility = base_tree.solve_implied(
-        bid_ask.mean(0),
-        {AllArgs.volatility.value: volatility},
-        time_to_expiration=time_to_expiration,
-        is_call=is_call,
-        risk_free_rate=risk_free_rate,
-        strike=strike,
-        start_price=start_price,
-    ).params[AllArgs.volatility.value]
 
-    is_call, strike = expand_for_broadcasting(
-        is_call,
-        strike,
-    )
-    init_probs, returns = base_tree._calc_end_nodes(
-        volatility,
-        time_to_expiration,
-        risk_free_rate,
-    )
+    return strike
 
-    returns = returns[:, 0]
-    init_probs = init_probs[:, 0]
-    print(
-        returns,
-        fitted_probs := implied_tree.feasible_init(
-            init_probs,
-            values,
-            barrier_const=1,
-            time_to_expiration=time_to_expiration,
-            is_call=is_call,
-            risk_free_rate=risk_free_rate,
-            strike=strike,
-            start_price=start_price,
-            end_underlying_returns=returns,
-            cost_of_carry=risk_free_rate,
-        ),
-    )
-    fitted_values = implied_tree(
-        start_price, fitted_probs, returns, time_to_expiration, risk_free_rate, risk_free_rate, is_call, strike
-    )
 
-    print(bid_ask.shape, fitted_values.shape)
-    print(fitted_values)
-    print("implied rate: ", jnp.exp(12 * jnp.log(jnp.dot(fitted_probs, returns))), " vs ", jnp.exp(risk_free_rate))
-    assert jnp.all(bid_ask[0] < fitted_values) and jnp.all(
-        fitted_values <= bid_ask[1]
-    )  # todo update to within some tolerance
-    assert False
+@pytest.fixture
+def qqq_start_price():
+    start_price = jnp.array([440.0])
+    return start_price
+
+
+@pytest.fixture
+def qqq_volatility():
+    volatility = jnp.array(
+        [
+            0.4571,
+            0.4367,
+            0.4177,
+            0.4037,
+            0.3859,
+            0.3691,
+            0.3546,
+            0.3409,
+            0.3269,
+            0.3120,
+            0.3004,
+            0.2882,
+            0.2777,
+        ]
+    )
+    return jnp.log(volatility + 1.0)
 
 
 def test_smile():
