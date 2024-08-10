@@ -1,18 +1,22 @@
 """Tree models."""
 
 import abc
+import functools
 import inspect
 from functools import partial
 from typing import Any, Callable, Tuple, Union
 
+import cyipopt
 import jax
 import jaxopt
+import jaxopt._src
+import jaxopt._src.implicit_diff
 import jaxtyping
 import typeguard
 from jax import numpy as jnp
 from jax.scipy.special import gammaln
 
-from jax_russell.base import ValuationModel, broadcast_args
+from jax_russell.base import AllArgs, ValuationModel, broadcast_args
 
 
 # binomial as suggested here https://github.com/google/jax/discussions/7044
@@ -689,7 +693,6 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
     """Value options using implied trees over a single maturity as described in Rubinstein 1994."""
 
     @partial(jax.jit, static_argnums=0)
-    @broadcast_args
     def __call__(
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
@@ -701,15 +704,35 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
     ):
+        shape = jnp.broadcast_shapes(
+            *[
+                _.shape
+                for _ in (
+                    start_price,
+                    strike,
+                    time_to_expiration,
+                    risk_free_rate,
+                    is_call,
+                )
+            ]
+        )
+        (start_price, strike, time_to_expiration, risk_free_rate, is_call) = tuple(
+            jnp.broadcast_arrays(start_price, strike, time_to_expiration, risk_free_rate, is_call)
+        )
+        end_probabilities = jnp.expand_dims(end_probabilities, list(range(-len(shape), 0)))
+        end_underlying_returns = jnp.expand_dims(end_underlying_returns, list(range(-len(shape), 0)))
+
         return self.discounter(
-            start_price,
-            end_probabilities,
-            end_underlying_returns,
-            time_to_expiration,
-            risk_free_rate,
-            cost_of_carry,
-            is_call,
-            strike,
+            *jnp.broadcast_arrays(
+                start_price,
+                end_probabilities,
+                end_underlying_returns,
+                strike,
+                time_to_expiration,
+                risk_free_rate,
+                # cost_of_carry,
+                is_call,
+            ),
         )
 
     def forecast_returns(
@@ -728,25 +751,236 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         probabilities, returns = self.forecast_returns(end_probabilities, end_underlying_returns)
         return probabilities, returns * start_price
 
-    def _solve_implied(self, expected_option_values, init_params, **kwargs):
-        signature = inspect.signature(self.__call__)  # todo: refactor into decorator?
+    def _solve_implied(
+        self,
+        expected_option_values,
+        init_probs,
+        tol=1e-6,
+        stepsize=0.0,
+        **kwargs,
+    ):
+        signature = inspect.signature(self.__call__)
+        init_params = {AllArgs.end_probabilities.value: init_probs}
         signature.bind(**{**init_params, **kwargs})
 
         @jax.jit
-        def objective(params, expected, kwargs):
-            # todo ...and softmax here
-            bound_arguments = signature.bind(**{**params, **kwargs})
+        def objective(probs, expected, kwargs):
+            bound_arguments = signature.bind(
+                **{
+                    **{AllArgs.end_probabilities.value: probs},
+                    **kwargs,
+                }
+            )
             residuals = expected - self(*bound_arguments.args, **bound_arguments.kwargs)
-            return jnp.mean(residuals**2)
+            err = jnp.mean(residuals**2)
+            return err
 
-        solver = jaxopt
+        end_probabilities_shape = init_probs.shape
+        projection = vmap_repeated(
+            # simplex_first(projection_end_probabilities),
+            projection_end_probabilities,
+            end_probabilities_shape,
+            (0, (0, 0, 0)),
+            0,
+        )
+        projection = _transpose_args_and_return(projection)
+
+        solver = jaxopt.ProjectedGradient(
+            fun=objective,
+            projection=projection,
+            tol=tol,
+            stepsize=stepsize,
+            # verbose=True,
+            # decrease_factor=0.25,
+            # acceleration=False,
+        )
+        bound_args = (coc_signature := inspect.signature(self._calc_cost_of_carry)).bind(
+            **{k: v for k, v in {**init_params, **kwargs}.items() if k in coc_signature.parameters}
+        )
+        cost_of_carry = jnp.exp(self._calc_cost_of_carry(*bound_args.args))
+
+        return solver.run(
+            init_probs,
+            hyperparams_proj=(
+                kwargs[AllArgs.end_underlying_returns.value],
+                jnp.broadcast_to(
+                    cost_of_carry,
+                    (1,) + end_probabilities_shape[1:],
+                ),
+                init_probs,
+            ),
+            expected=expected_option_values,
+            kwargs=kwargs,
+        )
+
+    def __solve_implied(
+        self,
+        expected_option_values,
+        init_probs,
+        tol=1e-6,
+        stepsize=0.0,
+        option_bid_ask_dim=0,
+        underlying_bid_ask_dim=None,
+        bid_ask_assumed_spread=2e-2,
+        **kwargs,
+    ):
+        signature = inspect.signature(self.__call__)
+        init_params = {AllArgs.end_probabilities.value: init_probs}
+        signature.bind(**{**init_params, **kwargs})
+
+        if option_bid_ask_dim is not None:
+            bid, ask = expected_option_values[0, :], expected_option_values[1, :]
+        else:
+            bid, ask = (
+                expected_option_values * (1 - bid_ask_assumed_spread),
+                expected_option_values * (1 + bid_ask_assumed_spread),
+            )
+
+        def add_arg(fn):
+            def decorated(*args, _):
+                return fn(*args)
+
+            return decorated
+
+        def objective(probs):
+            # expected, kwargs = params
+            # probs = jax.nn.softmax(probs)
+            # bound_arguments = signature.bind(
+            #     **{
+            #         **{AllArgs.end_probabilities.value: probs},
+            #         **kwargs,
+            #     }
+            # )
+            # residuals = expected_option_values - self(*bound_arguments.args, **bound_arguments.kwargs)
+            # err = jnp.mean(residuals**2)
+            # return err
+            return -(probs * (jnp.log(probs) - jnp.log(init_probs))).sum()
+            # return jnp.square(probs - init_probs)
+
+        def eq_fun(probs):
+            # expected, kwargs = params
+            # todo: add implied interest rate constraint
+            return jnp.stack((probs.sum() - 1,))
+
+        def ineq_fun(probs):
+
+            # _, kwargs = params
+            # todo: use __call__ and return terms that must be less than 1
+
+            # probs = jax.nn.softmax(probs)
+            bound_arguments = signature.bind(
+                **{
+                    **{AllArgs.end_probabilities.value: probs},
+                    **kwargs,
+                }
+            )
+            values = self(*bound_arguments.args, **bound_arguments.kwargs)
+            # discounted_returns = jnp.dot(
+            #     probs,
+            #     kwargs.get(AllArgs.end_underlying_returns.value),
+            # ) / (
+            #     jnp.exp(
+            #         kwargs.get(AllArgs.risk_free_rate.value) * kwargs.get(AllArgs.time_to_expiration.value) / self.steps
+            #     )
+            # )
+            # underlying_spread = 0.0002760080042  # todo update to arg
+            return jnp.concat(
+                (
+                    jnp.stack((values - bid, ask - values)).ravel(),
+                    # jnp.stack((bid - values, values - ask)).ravel(),
+                    # probs - 1.0,
+                    probs,
+                    # jnp.stack(
+                    #     (
+                    #         -discounted_returns * (start_price := kwargs.get(AllArgs.start_price.value))
+                    #         + start_price * (1 + underlying_spread),
+                    #         -start_price * (1 - underlying_spread) + discounted_returns * start_price,
+                    #     )
+                    # ).ravel(),
+                )
+            )
+            # return probs - 1.0
+
+        opt_fn = jaxopt._src.implicit_diff.make_kkt_optimality_fun(
+            add_arg(objective),
+            add_arg(eq_fun),
+            add_arg(ineq_fun),
+        )
+        # print(opt_fn((init_probs, 0.0, None), (expected_option_values, kwargs), None, None))
+        # print(opt_fn(init_probs, None, None, None))
+        # print("OPT ^^")
+        # assert False
+
+        # print("LOLWUT", jax.jit(jax.jacrev(jax.jacfwd(objective)))(init_probs).shape)
+
+        @jaxopt.implicit_diff.custom_root(opt_fn)
+        def ipopt_solver(probs, obj_params, eq_params, ineq_params):
+            soln = cyipopt.minimize_ipopt(
+                objective,
+                probs,
+                jac=jax.jit(jax.grad(objective)),
+                hess=jax.jit(jax.jacrev(jax.jacfwd(objective))),
+                constraints=[
+                    build_ipopt_constraint(_type, fun)
+                    for _type, fun in [
+                        ("eq", eq_fun),
+                        ("ineq", ineq_fun),
+                    ]
+                ],
+                options={
+                    # "constr_viol_tol": 1e-3,
+                    # "mu_init": 1e-4,
+                    # "start_with_resto": "yes",
+                    # "dual_inf_tol": 10.0,
+                    "max_iter": 10000,
+                },
+                # kwargs={"_": None},
+            )
+            print(soln.success, soln.nit, soln.info)
+            return jnp.array(soln.x)
+
+        return ipopt_solver(
+            # jax.nn.softmax(jnp.log(init_probs) + jax.random.normal(jax.random.PRNGKey(213), init_probs.shape) * 1e-1),
+            # (logs := jnp.log(init_probs)) - logs[-1],
+            init_probs,
+            None,
+            None,
+            None,
+        )
+
+        solver = jaxopt.Broyden(
+            fun=opt_fn,
+        )
+        bound_args = (coc_signature := inspect.signature(self._calc_cost_of_carry)).bind(
+            **{k: v for k, v in {**init_params, **kwargs}.items() if k in coc_signature.parameters}
+        )
+        cost_of_carry = jnp.exp(self._calc_cost_of_carry(*bound_args.args))
+
+        return solver.run(
+            (init_probs, 0.0, None),
+            (expected_option_values, kwargs),
+            None,
+            None,
+            # hyperparams_proj=(
+            #     kwargs[AllArgs.end_underlying_returns.value],
+            #     jnp.broadcast_to(
+            #         cost_of_carry,
+            #         (1,) + end_probabilities_shape[1:],
+            #     ),
+            #     init_probs,
+            # ),
+            # expected=expected_option_values,
+            # kwargs=kwargs,
+        )
 
     def solve_implied(self, expected_option_values, init_params, **kwargs):
         assert "end_underlying_returns" not in init_params, "solving for `end_underlying_returns` is not supported"
-        if "end_probabilities" in init_params:
-            return self._solve_implied(
+        if AllArgs.end_probabilities.value in init_params:
+            # if len(init_params) > 1:
+            #     raise NotImplementedError("Multiple implied arguments including end_probabilities not yet supported")
+            return self.__solve_implied(
                 expected_option_values,
-                init_params,
+                init_params[AllArgs.end_probabilities.value],
                 **kwargs,
             )
 
@@ -755,6 +989,138 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
             init_params,
             **kwargs,
         )
+
+    def _calc_cost_of_carry(
+        self,
+        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+    ):
+        return cost_of_carry
+
+    def feasible_init(
+        self,
+        init_probs,
+        values,
+        start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, " num_end_nodes *#contracts"],
+        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+        bid_ask_dim=0,
+        barrier_const=0,
+    ):
+
+        ind = jnp.zeros(tuple(1 for _ in values.shape), dtype=jnp.int32)
+        bid, ask = jnp.take_along_axis(values, ind, bid_ask_dim), jnp.take_along_axis(values, ind + 1, bid_ask_dim)
+
+        @jax.jit
+        def init_feasible_obj(log_probs):
+            preds = self(
+                start_price,
+                jax.nn.softmax(log_probs),
+                end_underlying_returns,
+                time_to_expiration,
+                risk_free_rate,
+                risk_free_rate,
+                is_call,
+                strike,
+            )
+            barrier = jnp.exp(
+                barrier_const * (jax.nn.relu(preds - ask) + barrier_const * jax.nn.relu(bid - preds))
+            ).mean()
+            return barrier + jnp.power(values - preds, 2).mean()
+
+        return jax.nn.softmax(jaxopt.LBFGS(init_feasible_obj).run(jnp.log(init_probs)).params)
+
+
+def build_ipopt_constraint(con_type: str, fun):
+    hess = jax.jit(jax.jacrev(jax.jacfwd(fun)))
+    return {
+        "type": con_type,
+        "fun": fun,
+        "jac": jax.jit(jax.jacfwd(fun)),
+        "hess": jax.jit(lambda x, v: jnp.dot(hess(x), v)),
+    }
+
+
+def simplex_first(fn):
+    @functools.wraps(fn)
+    def decorated(x, hyperparams):
+        return fn(jaxopt.projection.projection_simplex(x), hyperparams)
+
+    return decorated
+
+
+def projection_end_probabilities(x: jnp.ndarray, hyperparams) -> jnp.ndarray:
+    r"""Projection onto the affine set composed of node returns and ones:
+
+    .. math::
+
+      \underset{y}{\text{argmin}} ~ ||x - y||_2^2 \quad \textrm{subject to} \quad
+      A y = b
+
+    Args:
+      x: array to project.
+      hyperparams: tuple ``hyperparams = (a, b)``, where ``a`` is a vector of probabilities and
+        ``b`` is a scalar representing returns.
+
+    Returns:
+      output array, with the same shape as ``x``.
+    """
+    a, b, init = hyperparams
+    A = jnp.expand_dims(a, 0)
+    A = jnp.concatenate((A, jnp.ones_like(A)))
+    b = jnp.concatenate((b, jnp.ones_like(b)))
+
+    matvec_Q = lambda _, vec: vec
+    matvec_G = lambda _, vec: -vec
+    osqp = jaxopt.OSQP(matvec_Q=matvec_Q, matvec_G=matvec_G, tol=1e-6)
+    hyperparams = dict(
+        params_obj=(None, -x),
+        params_eq=(A, b),
+        params_ineq=(None, jnp.zeros_like(x)),
+    )
+
+    kkt_sol = osqp.run(
+        osqp.init_params(init, **hyperparams),
+        **hyperparams,
+    ).params
+    return kkt_sol.primal
+
+
+def vmap_repeated(fn, shape, in_dims, out_dims):
+    new_fn = None
+    for _ in reversed(shape[1:]):
+        new_fn = jax.vmap(
+            new_fn if new_fn is not None else fn,
+            in_dims,
+            out_dims,
+        )
+    return new_fn
+
+
+def _transpose_args(fn):
+    @functools.wraps(fn)
+    def decorated(*args, **kwargs):
+        return fn(
+            *jax.tree.map(jnp.transpose, args),
+            **jax.tree.map(jnp.transpose, kwargs),
+        )
+
+    return decorated
+
+
+def _transpose_return(fn):
+    @functools.wraps(fn)
+    def decorated(*args, **kwargs):
+        return jax.tree.map(jnp.transpose, fn(*args, **kwargs))
+
+    return decorated
+
+
+def _transpose_args_and_return(fn):
+    return _transpose_return(_transpose_args(fn))
 
 
 def back_combine_path_probabilities(

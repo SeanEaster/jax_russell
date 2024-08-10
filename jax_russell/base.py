@@ -13,7 +13,6 @@ from jax import numpy as jnp
 
 
 class AllArgs(Enum):
-
     start_price = "start_price"
     volatility = "volatility"
     time_to_expiration = "time_to_expiration"
@@ -22,6 +21,8 @@ class AllArgs(Enum):
     risk_free_rate = "risk_free_rate"
     cost_of_carry = "cost_of_carry"
     continuous_dividend = "continuous_dividend"
+    end_probabilities = "end_probabilities"
+    end_underlying_returns = "end_underlying_returns"
 
 
 def broadcast_args(meth: Callable) -> Callable:
@@ -58,7 +59,6 @@ def first_order_greeks(value_fn: Callable) -> Callable:
 
     @partial(jax.jit, static_argnums=0)
     def first_order(*args, argnums=None, **kwargs):
-
         return jnp.hstack(
             jax.jacfwd(
                 value_fn,
@@ -86,7 +86,6 @@ def second_order_greeks(first_order: Callable) -> Callable:
 
     @partial(jax.jit, static_argnums=0)
     def second_order(*args, argnums=None, **kwargs):
-
         return jnp.concatenate(
             jax.jacfwd(
                 first_order,
@@ -114,7 +113,6 @@ def greeks(cls):
 
 
 def zero_named_args(arg_names: List[str]) -> Callable:
-
     if type(arg_names) is not list:
         arg_names = [arg_names]
 
@@ -139,6 +137,10 @@ def zero_named_args(arg_names: List[str]) -> Callable:
     return decorate
 
 
+def _zero_cost_of_carry(_):
+    return jnp.zeros(1)
+
+
 def asay_margined(cls):
     cls.__call__ = zero_named_args(
         [
@@ -146,12 +148,30 @@ def asay_margined(cls):
             AllArgs.risk_free_rate.value,
         ]
     )(cls.__call__)
+
+    cls._calc_cost_of_carry = _zero_cost_of_carry
     return cls
 
 
 def futures_option(cls):
     cls.__call__ = zero_named_args(AllArgs.cost_of_carry.value)(cls.__call__)
+    cls._calc_cost_of_carry = _zero_cost_of_carry
     return cls
+
+
+def _continuous_dividend_cost_of_carry(
+    _,
+    risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+    continuous_dividend: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+):
+    return risk_free_rate - continuous_dividend
+
+
+def _stock_option_cost_of_carry(
+    _,
+    risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
+):
+    return risk_free_rate
 
 
 def stock_option_continuous_dividend(value_fn: Callable) -> Callable:
@@ -197,6 +217,7 @@ def stock_option_continuous_dividend_cls(cls):
     """
 
     cls.__call__ = stock_option_continuous_dividend(cls.__call__)
+    cls._calc_cost_of_carry = _continuous_dividend_cost_of_carry
     return cls
 
 
@@ -254,6 +275,7 @@ def signatures(value_fn: Callable, arg_names: List[str]) -> Tuple[inspect.Signat
 def stock_option_cls(cls):
     """Decorate a class to use `risk_free_rate` as `cost_of_carry`."""
     cls.__call__ = stock_option(cls.__call__)
+    cls._calc_cost_of_carry = _stock_option_cost_of_carry
     return cls
 
 
