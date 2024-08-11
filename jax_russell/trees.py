@@ -844,7 +844,7 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
 
         def objective(probs):
             # expected, kwargs = params
-            # probs = jax.nn.softmax(probs)
+            probs = jax.nn.softmax(probs)
             # bound_arguments = signature.bind(
             #     **{
             #         **{AllArgs.end_probabilities.value: probs},
@@ -867,7 +867,7 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
             # _, kwargs = params
             # todo: use __call__ and return terms that must be less than 1
 
-            # probs = jax.nn.softmax(probs)
+            probs = jax.nn.softmax(probs)
             bound_arguments = signature.bind(
                 **{
                     **{AllArgs.end_probabilities.value: probs},
@@ -901,11 +901,11 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
             )
             # return probs - 1.0
 
-        opt_fn = jaxopt._src.implicit_diff.make_kkt_optimality_fun(
-            add_arg(objective),
-            add_arg(eq_fun),
-            add_arg(ineq_fun),
-        )
+        # opt_fn = jaxopt._src.implicit_diff.make_kkt_optimality_fun(
+        #     add_arg(objective),
+        #     add_arg(eq_fun),
+        #     add_arg(ineq_fun),
+        # )
         # print(opt_fn((init_probs, 0.0, None), (expected_option_values, kwargs), None, None))
         # print(opt_fn(init_probs, None, None, None))
         # print("OPT ^^")
@@ -913,7 +913,7 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
 
         # print("LOLWUT", jax.jit(jax.jacrev(jax.jacfwd(objective)))(init_probs).shape)
 
-        @jaxopt.implicit_diff.custom_root(opt_fn)
+        # @jaxopt.implicit_diff.custom_root(opt_fn)
         def ipopt_solver(probs, obj_params, eq_params, ineq_params):
             soln = cyipopt.minimize_ipopt(
                 objective,
@@ -923,7 +923,7 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
                 constraints=[
                     build_ipopt_constraint(_type, fun)
                     for _type, fun in [
-                        ("eq", eq_fun),
+                        # ("eq", eq_fun),
                         ("ineq", ineq_fun),
                     ]
                 ],
@@ -942,35 +942,10 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         return ipopt_solver(
             # jax.nn.softmax(jnp.log(init_probs) + jax.random.normal(jax.random.PRNGKey(213), init_probs.shape) * 1e-1),
             # (logs := jnp.log(init_probs)) - logs[-1],
-            init_probs,
+            jnp.log(init_probs),
             None,
             None,
             None,
-        )
-
-        solver = jaxopt.Broyden(
-            fun=opt_fn,
-        )
-        bound_args = (coc_signature := inspect.signature(self._calc_cost_of_carry)).bind(
-            **{k: v for k, v in {**init_params, **kwargs}.items() if k in coc_signature.parameters}
-        )
-        cost_of_carry = jnp.exp(self._calc_cost_of_carry(*bound_args.args))
-
-        return solver.run(
-            (init_probs, 0.0, None),
-            (expected_option_values, kwargs),
-            None,
-            None,
-            # hyperparams_proj=(
-            #     kwargs[AllArgs.end_underlying_returns.value],
-            #     jnp.broadcast_to(
-            #         cost_of_carry,
-            #         (1,) + end_probabilities_shape[1:],
-            #     ),
-            #     init_probs,
-            # ),
-            # expected=expected_option_values,
-            # kwargs=kwargs,
         )
 
     def solve_implied(self, expected_option_values, init_params, **kwargs):
@@ -1018,7 +993,7 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         def init_feasible_obj(log_probs):
             preds = self(
                 start_price,
-                jax.nn.softmax(log_probs),
+                probs := jax.nn.softmax(log_probs),
                 end_underlying_returns,
                 time_to_expiration,
                 risk_free_rate,
@@ -1026,10 +1001,15 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
                 is_call,
                 strike,
             )
-            barrier = jnp.exp(
+            prices_barrier = jnp.exp(
                 barrier_const * (jax.nn.relu(preds - ask) + barrier_const * jax.nn.relu(bid - preds))
             ).mean()
-            return barrier + jnp.power(values - preds, 2).mean()
+            implied_rate = jnp.dot(probs, end_underlying_returns)
+            rate_difference = jnp.exp(risk_free_rate * time_to_expiration) - implied_rate
+            rate_barrier = jnp.exp(jnp.abs(rate_difference))
+
+            return prices_barrier + rate_barrier + jnp.power(values - preds, 2).mean()
+            # return prices_barrier + jnp.power(values - preds, 2).mean()
 
         return jax.nn.softmax(jaxopt.LBFGS(init_feasible_obj).run(jnp.log(init_probs)).params)
 

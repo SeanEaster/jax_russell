@@ -9,7 +9,7 @@ from jax import numpy as jnp
 
 import tests.trees.test_forecast as test_forecast
 import tests.trees.test_values as test_values
-from jax_russell import StockOptionCRRTree, StockOptionRBTree
+from jax_russell import StockOptionCRRTree
 from jax_russell.base import AllArgs, greeks
 from jax_russell.bsm import GeneralizedBlackScholesMerten
 from jax_russell.trees import (
@@ -143,27 +143,6 @@ def test_mixins_solve_bsm(
     )
 
 
-@pytest.fixture
-def rb_end_nodes():
-    steps = 100
-    rb_tree = StockOptionRBTree(steps, "american")
-    return rb_tree._calc_end_nodes(
-        test_values.rb_volatility,
-        test_values.rb_time_to_expiration,
-        test_values.rb_risk_free_rate,
-    )
-
-
-@pytest.fixture
-def rb_end_nodes_expanded(rb_end_nodes):
-    return jax.tree.map(lambda x: jnp.expand_dims(x, [1, 2]), rb_end_nodes)
-
-
-@pytest.fixture
-def rb_risk_free_rate_expanded():
-    return jnp.exp(test_values.rb_risk_free_rate) * jnp.ones([1, 1, 1])
-
-
 def test_projection(
     rb_end_nodes_expanded,
     rb_risk_free_rate_expanded,
@@ -244,173 +223,29 @@ def expand_for_broadcasting(*args):
     )
 
 
-def test_feasible(qqq_fitted_values, qqq_bid_ask):
+def test_feasible_values(qqq_fitted_values, qqq_bid_ask):
     """Test that an implied tree can derive one set of implied probabilities from a set of options."""
 
     assert jnp.all(qqq_bid_ask[0] < qqq_fitted_values) and jnp.all(qqq_fitted_values <= qqq_bid_ask[1])
 
 
-@pytest.fixture
-def qqq_fitted_values(
-    qqq_volatility,
-    qqq_start_price,
-    qqq_strike,
+def test_feasible_rate(qqq_returns_fitted_probs, qqq_risk_free_rate):
+    assert jnp.allclose(jnp.power(jnp.dot(*qqq_returns_fitted_probs), 12), jnp.exp(qqq_risk_free_rate), atol=1e-5)
+
+
+def test_constrained(
+    qqq_implied_tree,
+    qqq_returns_fitted_probs,
     qqq_values,
-    qqq_bid_ask,
-    qqq_time_to_expiration,
-    qqq_risk_free_rate,
-    qqq_is_call,
+    qqq_solve_implied_kwargs,
 ):
-    steps = 251
 
-    tree_type = "american"
-    base_tree = StockOptionCRRTree(steps, tree_type)
-    implied_tree = RubinsteinImpliedBinomialTree(steps, tree_type)
+    _, init_probs = qqq_returns_fitted_probs
 
-    volatility = base_tree.solve_implied(
-        qqq_bid_ask.mean(0),
-        {AllArgs.volatility.value: qqq_volatility},
-        time_to_expiration=qqq_time_to_expiration,
-        is_call=qqq_is_call,
-        risk_free_rate=qqq_risk_free_rate,
-        strike=qqq_strike,
-        start_price=qqq_start_price,
-    ).params[AllArgs.volatility.value]
-
-    is_call, strike = expand_for_broadcasting(
-        qqq_is_call,
-        qqq_strike,
+    qqq_implied_tree.solve_implied(
+        qqq_values, {AllArgs.end_probabilities.value: init_probs}, **qqq_solve_implied_kwargs
     )
-    init_probs, returns = base_tree._calc_end_nodes(
-        volatility,
-        qqq_time_to_expiration,
-        qqq_risk_free_rate,
-    )
-
-    returns = returns[:, 0]
-    init_probs = init_probs[:, 0]
-    fitted_probs = implied_tree.feasible_init(
-        init_probs,
-        qqq_values,
-        barrier_const=1,
-        time_to_expiration=qqq_time_to_expiration,
-        is_call=qqq_is_call,
-        risk_free_rate=qqq_risk_free_rate,
-        strike=strike,
-        start_price=qqq_start_price,
-        end_underlying_returns=returns,
-        cost_of_carry=qqq_risk_free_rate,
-    )
-
-    fitted_values = implied_tree(
-        qqq_start_price,
-        fitted_probs,
-        returns,
-        qqq_time_to_expiration,
-        qqq_risk_free_rate,
-        qqq_risk_free_rate,
-        is_call,
-        strike,
-    )
-
-    return fitted_values
-
-
-@pytest.fixture
-def qqq_is_call():
-    is_call = jnp.array(1.0)
-    return is_call
-
-
-@pytest.fixture
-def qqq_risk_free_rate():
-    risk_free_rate = jnp.log(jnp.array(1.05))
-    return risk_free_rate
-
-
-@pytest.fixture
-def qqq_time_to_expiration():
-    time_to_expiration = jnp.array(1.0 / 12.0)
-    return time_to_expiration
-
-
-@pytest.fixture
-def qqq_values(qqq_bid_ask):
-    values = jnp.expand_dims(qqq_bid_ask, 1)
-
-    return values
-
-
-@pytest.fixture
-def qqq_bid_ask():
-    return jnp.array(
-        [
-            [46.07, 46.40],
-            [41.76, 41.99],
-            [37.50, 37.71],
-            [33.52, 33.74],
-            [29.53, 29.72],
-            [25.70, 25.88],
-            [22.16, 22.31],
-            [18.84, 18.97],
-            [15.69, 15.82],
-            [12.77, 12.86],
-            [10.25, 10.33],
-            [7.94, 8.05],
-            [6.06, 6.14],
-        ]
-    ).T
-
-
-@pytest.fixture
-def qqq_strike():
-    strike = jnp.array(
-        [
-            400.0,
-            405.0,
-            410.0,
-            415.0,
-            420.0,
-            425.0,
-            430.0,
-            435.0,
-            440.0,
-            445.0,
-            450.0,
-            455.0,
-            460.0,
-        ]
-    )
-
-    return strike
-
-
-@pytest.fixture
-def qqq_start_price():
-    start_price = jnp.array([440.0])
-    return start_price
-
-
-@pytest.fixture
-def qqq_volatility():
-    volatility = jnp.array(
-        [
-            0.4571,
-            0.4367,
-            0.4177,
-            0.4037,
-            0.3859,
-            0.3691,
-            0.3546,
-            0.3409,
-            0.3269,
-            0.3120,
-            0.3004,
-            0.2882,
-            0.2777,
-        ]
-    )
-    return jnp.log(volatility + 1.0)
+    assert False
 
 
 def test_smile():
