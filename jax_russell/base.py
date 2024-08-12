@@ -301,15 +301,12 @@ class ValuationModel(abc.ABC):
         Returns:
             params, state: the parameters and state returned by a `jaxopt` optimizer `run()`
         """  # noqa: E501
-        signature = inspect.signature(self.__call__)  # todo: refactor into decorator?
+        signature = inspect.signature(self.__call__)
         # inspect signature using bind to make sure all args have been passed
         signature.bind(**{**init_params, **kwargs})
 
-        # todo: if end_probabilities is in init_params, take log here...
-
         @jax.jit
         def objective(params, expected, kwargs):
-            # todo ...and softmax here
             bound_arguments = signature.bind(**{**params, **kwargs})
             residuals = expected - self(*bound_arguments.args, **bound_arguments.kwargs)
             return jnp.mean(residuals**2)

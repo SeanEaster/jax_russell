@@ -177,21 +177,18 @@ def test_solve_implied_tree():
         end_underlying_returns := jnp.expand_dims(test_forecast.END_VALUES, -1),
         tte := jnp.ones((1,)),
         rfr := test_values.rb_risk_free_rate,
-        coc := test_values.rb_risk_free_rate,
         is_call := jnp.ones((1,)),
         strike := jnp.ones((1,)),
     )
     implied = tree.solve_implied(
         val,
         {AllArgs.end_probabilities.value: end_probabilities},
-        # {AllArgs.end_probabilities.value: jnp.ones_like(end_probabilities) / end_probabilities.shape[0]},
         **{
             AllArgs.start_price.value: start_price,
             AllArgs.end_underlying_returns.value: end_underlying_returns,
             AllArgs.time_to_expiration.value: tte,
             AllArgs.risk_free_rate.value: rfr,
             AllArgs.time_to_expiration.value: tte,
-            AllArgs.cost_of_carry.value: coc,
             "is_call": is_call,
             AllArgs.strike.value: strike,
         },
@@ -205,7 +202,6 @@ def test_solve_implied_tree():
             end_underlying_returns,
             tte,
             rfr,
-            coc,
             is_call,
             strike,
         ),
@@ -233,18 +229,8 @@ def test_feasible_rate(qqq_returns_fitted_probs, qqq_risk_free_rate):
     assert jnp.allclose(jnp.power(jnp.dot(*qqq_returns_fitted_probs), 12), jnp.exp(qqq_risk_free_rate), atol=1e-5)
 
 
-def test_constrained(
-    qqq_implied_tree,
-    qqq_returns_fitted_probs,
-    qqq_values,
-    qqq_solve_implied_kwargs,
-):
-
-    _, init_probs = qqq_returns_fitted_probs
-
-    qqq_implied_tree.solve_implied(
-        qqq_values, {AllArgs.end_probabilities.value: init_probs}, **qqq_solve_implied_kwargs
-    )
+def test_implied_tree_solve_implied(qqq_implied_probs):
+    print(qqq_implied_probs)
     assert False
 
 

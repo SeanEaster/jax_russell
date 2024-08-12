@@ -700,7 +700,6 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         end_underlying_returns: jaxtyping.Float[jaxtyping.Array, " num_end_nodes *#contracts"],
         time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
     ):
@@ -751,7 +750,7 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         probabilities, returns = self.forecast_returns(end_probabilities, end_underlying_returns)
         return probabilities, returns * start_price
 
-    def _solve_implied(
+    def __solve_implied(
         self,
         expected_option_values,
         init_probs,
@@ -813,147 +812,19 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
             kwargs=kwargs,
         )
 
-    def __solve_implied(
+    def solve_implied(
         self,
         expected_option_values,
-        init_probs,
-        tol=1e-6,
-        stepsize=0.0,
-        option_bid_ask_dim=0,
-        underlying_bid_ask_dim=None,
-        bid_ask_assumed_spread=2e-2,
+        init_params,
         **kwargs,
+        # todo: needs options to pass to _solve_implied_probabilities if necessary
     ):
-        signature = inspect.signature(self.__call__)
-        init_params = {AllArgs.end_probabilities.value: init_probs}
-        signature.bind(**{**init_params, **kwargs})
-
-        if option_bid_ask_dim is not None:
-            bid, ask = expected_option_values[0, :], expected_option_values[1, :]
-        else:
-            bid, ask = (
-                expected_option_values * (1 - bid_ask_assumed_spread),
-                expected_option_values * (1 + bid_ask_assumed_spread),
-            )
-
-        def add_arg(fn):
-            def decorated(*args, _):
-                return fn(*args)
-
-            return decorated
-
-        def objective(probs):
-            # expected, kwargs = params
-            probs = jax.nn.softmax(probs)
-            # bound_arguments = signature.bind(
-            #     **{
-            #         **{AllArgs.end_probabilities.value: probs},
-            #         **kwargs,
-            #     }
-            # )
-            # residuals = expected_option_values - self(*bound_arguments.args, **bound_arguments.kwargs)
-            # err = jnp.mean(residuals**2)
-            # return err
-            return -(probs * (jnp.log(probs) - jnp.log(init_probs))).sum()
-            # return jnp.square(probs - init_probs)
-
-        def eq_fun(probs):
-            # expected, kwargs = params
-            # todo: add implied interest rate constraint
-            return jnp.stack((probs.sum() - 1,))
-
-        def ineq_fun(probs):
-
-            # _, kwargs = params
-            # todo: use __call__ and return terms that must be less than 1
-
-            probs = jax.nn.softmax(probs)
-            bound_arguments = signature.bind(
-                **{
-                    **{AllArgs.end_probabilities.value: probs},
-                    **kwargs,
-                }
-            )
-            values = self(*bound_arguments.args, **bound_arguments.kwargs)
-            # discounted_returns = jnp.dot(
-            #     probs,
-            #     kwargs.get(AllArgs.end_underlying_returns.value),
-            # ) / (
-            #     jnp.exp(
-            #         kwargs.get(AllArgs.risk_free_rate.value) * kwargs.get(AllArgs.time_to_expiration.value) / self.steps
-            #     )
-            # )
-            # underlying_spread = 0.0002760080042  # todo update to arg
-            return jnp.concat(
-                (
-                    jnp.stack((values - bid, ask - values)).ravel(),
-                    # jnp.stack((bid - values, values - ask)).ravel(),
-                    # probs - 1.0,
-                    probs,
-                    # jnp.stack(
-                    #     (
-                    #         -discounted_returns * (start_price := kwargs.get(AllArgs.start_price.value))
-                    #         + start_price * (1 + underlying_spread),
-                    #         -start_price * (1 - underlying_spread) + discounted_returns * start_price,
-                    #     )
-                    # ).ravel(),
-                )
-            )
-            # return probs - 1.0
-
-        # opt_fn = jaxopt._src.implicit_diff.make_kkt_optimality_fun(
-        #     add_arg(objective),
-        #     add_arg(eq_fun),
-        #     add_arg(ineq_fun),
-        # )
-        # print(opt_fn((init_probs, 0.0, None), (expected_option_values, kwargs), None, None))
-        # print(opt_fn(init_probs, None, None, None))
-        # print("OPT ^^")
-        # assert False
-
-        # print("LOLWUT", jax.jit(jax.jacrev(jax.jacfwd(objective)))(init_probs).shape)
-
-        # @jaxopt.implicit_diff.custom_root(opt_fn)
-        def ipopt_solver(probs, obj_params, eq_params, ineq_params):
-            soln = cyipopt.minimize_ipopt(
-                objective,
-                probs,
-                jac=jax.jit(jax.grad(objective)),
-                hess=jax.jit(jax.jacrev(jax.jacfwd(objective))),
-                constraints=[
-                    build_ipopt_constraint(_type, fun)
-                    for _type, fun in [
-                        # ("eq", eq_fun),
-                        ("ineq", ineq_fun),
-                    ]
-                ],
-                options={
-                    # "constr_viol_tol": 1e-3,
-                    # "mu_init": 1e-4,
-                    # "start_with_resto": "yes",
-                    # "dual_inf_tol": 10.0,
-                    "max_iter": 10000,
-                },
-                # kwargs={"_": None},
-            )
-            print(soln.success, soln.nit, soln.info)
-            return jnp.array(soln.x)
-
-        return ipopt_solver(
-            # jax.nn.softmax(jnp.log(init_probs) + jax.random.normal(jax.random.PRNGKey(213), init_probs.shape) * 1e-1),
-            # (logs := jnp.log(init_probs)) - logs[-1],
-            jnp.log(init_probs),
-            None,
-            None,
-            None,
-        )
-
-    def solve_implied(self, expected_option_values, init_params, **kwargs):
         assert "end_underlying_returns" not in init_params, "solving for `end_underlying_returns` is not supported"
         if AllArgs.end_probabilities.value in init_params:
-            # if len(init_params) > 1:
-            #     raise NotImplementedError("Multiple implied arguments including end_probabilities not yet supported")
-            return self.__solve_implied(
+            if len(init_params) > 1:
+
+                return self._solve_implied(expected_option_values=None)
+            return self._solve_implied_probabilities(
                 expected_option_values,
                 init_params[AllArgs.end_probabilities.value],
                 **kwargs,
@@ -965,11 +836,107 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
             **kwargs,
         )
 
+    def _solve_implied(
+        self,
+        expected_option_values,
+        init_params,
+        **kwargs,
+    ):
+        signature = inspect.signature(self.__call__)
+        # inspect signature using bind to make sure all args have been passed
+        signature.bind(**{**init_params, **kwargs})
+
+        @jax.jit
+        def objective(params, expected, kwargs):
+            bound_arguments = signature.bind(
+                **{
+                    **params,
+                    **kwargs,
+                    AllArgs.end_probabilities.value: self._solve_implied_probabilities(  # becomes an inner loop optimmizing probabilities
+                        expected_option_values,
+                        params.get(AllArgs.end_probabilities.value),
+                        **kwargs,
+                    ),
+                }
+            )
+            residuals = expected - self(*bound_arguments.args, **bound_arguments.kwargs)
+            return jnp.mean(residuals**2)
+
+        solver = jaxopt.LBFGSB(
+            objective,
+        )
+        res = solver.run(
+            init_params,
+            expected=expected_option_values,
+            kwargs=kwargs,
+            bounds=(
+                {k: jnp.zeros_like(v) for k, v in init_params.items()},
+                {k: jnp.ones_like(v) * jnp.inf for k, v in init_params.items()},
+            ),
+        )
+        return res
+
     def _calc_cost_of_carry(
         self,
         cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
     ):
         return cost_of_carry
+
+    def _solve_implied_probabilities(
+        self,
+        expected_option_values,
+        init_probabilities,
+        bid_ask_dim=0,
+        barrier_const=1,
+        **kwargs,
+    ):
+        signature = inspect.signature(self.__call__)
+        signature.bind(**{**kwargs, AllArgs.end_probabilities.value: init_probabilities})
+
+        ind = jnp.zeros(tuple(1 for _ in expected_option_values.shape), dtype=jnp.int32)
+        # todo: add option for assumed relative spread, (default to None and require one of bid_ask_dim or relative_spread to be set?)
+        bid, ask = jnp.take_along_axis(expected_option_values, ind, bid_ask_dim), jnp.take_along_axis(
+            expected_option_values, ind + 1, bid_ask_dim
+        )
+
+        @jax.jit
+        def init_feasible_obj(nat_params):
+            log_probs = jnp.concat((jnp.zeros(1), nat_params))
+            bound_arguments = signature.bind(
+                **{
+                    **kwargs,
+                    AllArgs.end_probabilities.value: (probs := jax.nn.softmax(log_probs)),
+                }
+            )
+
+            preds = self(*bound_arguments.args, **bound_arguments.kwargs)
+            residuals = expected_option_values - self(*bound_arguments.args, **bound_arguments.kwargs)
+
+            predictive_error = jnp.mean(residuals**2)
+
+            prices_barrier = jnp.exp(
+                barrier_const * (jax.nn.relu(preds - ask) + barrier_const * jax.nn.relu(bid - preds))
+            ).mean()
+
+            implied_rate = jnp.dot(probs, kwargs.get(AllArgs.end_underlying_returns.value))
+            rate_difference = (
+                jnp.exp(kwargs.get(AllArgs.risk_free_rate.value) * kwargs.get(AllArgs.time_to_expiration.value))
+                - implied_rate
+            )
+            rate_barrier = jnp.exp(jnp.abs(rate_difference))
+
+            return prices_barrier + rate_barrier + predictive_error
+
+        init_log_probs = jnp.log(init_probabilities)
+        nat_params = (init_log_probs - init_log_probs[0])[1:]
+        return jax.nn.softmax(
+            jnp.concat(
+                (
+                    jnp.zeros(1),
+                    jaxopt.LBFGS(init_feasible_obj).run(nat_params).params,
+                )
+            )
+        )
 
     def feasible_init(
         self,
@@ -979,11 +946,10 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         end_underlying_returns: jaxtyping.Float[jaxtyping.Array, " num_end_nodes *#contracts"],
         time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         bid_ask_dim=0,
-        barrier_const=0,
+        barrier_const=1,
     ):
 
         ind = jnp.zeros(tuple(1 for _ in values.shape), dtype=jnp.int32)
@@ -997,7 +963,6 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
                 end_underlying_returns,
                 time_to_expiration,
                 risk_free_rate,
-                risk_free_rate,
                 is_call,
                 strike,
             )
@@ -1009,7 +974,6 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
             rate_barrier = jnp.exp(jnp.abs(rate_difference))
 
             return prices_barrier + rate_barrier + jnp.power(values - preds, 2).mean()
-            # return prices_barrier + jnp.power(values - preds, 2).mean()
 
         return jax.nn.softmax(jaxopt.LBFGS(init_feasible_obj).run(jnp.log(init_probs)).params)
 

@@ -101,7 +101,6 @@ def qqq_fitted_values(
         returns,
         qqq_time_to_expiration,
         qqq_risk_free_rate,
-        qqq_risk_free_rate,
         qqq_is_call_expanded,
         qqq_strike_expanded,
     )
@@ -129,20 +128,64 @@ def qqq_returns_fitted_probs(
 
     returns = returns[:, 0]
     init_probs = init_probs[:, 0]
-    fitted_probs = qqq_implied_tree.feasible_init(
-        init_probs,
+    fitted_probs = qqq_implied_tree._solve_implied_probabilities(
         qqq_values,
+        init_probs,
         barrier_const=1,
+        probability_threshold=1e-16,
         time_to_expiration=qqq_time_to_expiration,
         is_call=qqq_is_call_expanded,
         risk_free_rate=qqq_risk_free_rate,
         strike=qqq_strike_expanded,
         start_price=qqq_start_price,
         end_underlying_returns=returns,
-        cost_of_carry=qqq_risk_free_rate,
     )
 
     return returns, fitted_probs
+
+
+@pytest.fixture
+def qqq_implied_probs(
+    qqq_fitted_volatility,
+    qqq_start_price,
+    qqq_values,
+    qqq_time_to_expiration,
+    qqq_risk_free_rate,
+    qqq_base_tree,
+    qqq_implied_tree,
+    qqq_is_call_expanded,
+    qqq_strike_expanded,
+):
+    init_probs, returns = qqq_base_tree._calc_end_nodes(
+        qqq_fitted_volatility,
+        qqq_time_to_expiration,
+        qqq_risk_free_rate,
+    )
+
+    returns = returns[:, 0]
+    init_probs = init_probs[:, 0]
+    fitted_probs = qqq_implied_tree.thing(
+        qqq_values,
+        {AllArgs.end_probabilities.value: init_probs},
+        time_to_expiration=qqq_time_to_expiration,
+        is_call=qqq_is_call_expanded,
+        risk_free_rate=qqq_risk_free_rate,
+        strike=qqq_strike_expanded,
+        start_price=qqq_start_price,
+        end_underlying_returns=returns,
+    )
+
+    return returns, fitted_probs
+
+
+@pytest.fixture
+def qqq_returns(qqq_returns_fitted_probs):
+    return qqq_returns_fitted_probs[0]
+
+
+@pytest.fixture
+def qqq_fitted_probs(qqq_returns_fitted_probs):
+    return qqq_returns_fitted_probs[1]
 
 
 @pytest.fixture
