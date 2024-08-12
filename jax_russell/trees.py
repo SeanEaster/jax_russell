@@ -1,7 +1,6 @@
 """Tree models."""
 
 import abc
-import functools
 import inspect
 from functools import partial
 from typing import Any, Callable, Tuple, Union
@@ -208,13 +207,13 @@ class Discounter(abc.ABC):
     def __call__(
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        end_probabilities: jaxtyping.Float[jaxtyping.Array, "num_nodes *#contracts"],
-        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "num_nodes *contracts"],
+        end_probabilities: jaxtyping.Float[jaxtyping.Array, " num_nodes *#contracts"],
+        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, " num_nodes *contracts"],
         strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "*#contracts"]:
+    ) -> jaxtyping.Float[jaxtyping.Array, "*#contracts"]:  # noqa F821
         """Must implement discounting and associated logic."""
 
 
@@ -225,8 +224,8 @@ class EuropeanDiscounter(Discounter):
     def __call__(
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        end_probabilities: jaxtyping.Float[jaxtyping.Array, "num_nodes *#contracts"],
-        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "num_nodes *contracts"],
+        end_probabilities: jaxtyping.Float[jaxtyping.Array, " num_nodes *#contracts"],
+        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, " num_nodes *contracts"],
         strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
@@ -272,8 +271,8 @@ class AmericanDiscounter(Discounter):
     def __call__(
         self,
         start_price: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-        end_probabilities: jaxtyping.Float[jaxtyping.Array, "num_nodes *#contracts"],
-        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "num_nodes *#contracts"],
+        end_probabilities: jaxtyping.Float[jaxtyping.Array, " num_nodes *#contracts"],
+        end_underlying_returns: jaxtyping.Float[jaxtyping.Array, " num_nodes *#contracts"],
         strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
@@ -312,7 +311,7 @@ class AmericanDiscounter(Discounter):
                 new_path_probabilities,
                 new_node_underlying_returns,
                 up_transition_probability,
-            ) = back_combine_path_probabilities(path_probabilities, node_underlying_returns, implied_risk_free_rate)
+            ) = _back_combine_path_probabilities(path_probabilities, node_underlying_returns, implied_risk_free_rate)
             downward_values = jnp.roll(values.at[0, ...].set(0.0), -1, 0)
             upward_values = jnp.where(new_path_probabilities > 0.0, values, 0.0)
             discounted_value = jnp.exp(-risk_free_rate * delta_t) * (
@@ -341,8 +340,8 @@ class AmericanDiscounter(Discounter):
 
 
 def calc_implied_risk_free_rate(
-    end_probabilities: jaxtyping.Float[jaxtyping.Array, "num_nodes *contracts"],
-    end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "num_nodes *contracts"],
+    end_probabilities: jaxtyping.Float[jaxtyping.Array, " num_nodes *contracts"],
+    end_underlying_returns: jaxtyping.Float[jaxtyping.Array, " num_nodes *contracts"],
 ):
     """Calculate the implied risk-free rate of an end-node forecast.
 
@@ -353,7 +352,6 @@ def calc_implied_risk_free_rate(
     Returns:
         jnp.array: the implied discrete risk-free rates
     """
-
     return jnp.power(
         jnp.multiply(end_probabilities, end_underlying_returns).sum(
             0,
@@ -391,7 +389,9 @@ class BinomialTree(ValuationModel):
         self.discounter = (
             discounter
             if discounter is not None
-            else AmericanDiscounter() if option_type == 'american' else EuropeanDiscounter()
+            else AmericanDiscounter()
+            if option_type == 'american'
+            else EuropeanDiscounter()
         )
 
     def _calc_end_returns(
@@ -441,7 +441,7 @@ class BinomialTree(ValuationModel):
 
     def _forecast(self, end_probabilities, end_underlying_returns):
         _, (probabilities, forecasted_returns) = jax.lax.scan(
-            back_combine_paths_scan,
+            _back_combine_paths_scan,
             (
                 calc_path_probabilities(end_probabilities, self.steps),
                 end_underlying_returns,
@@ -470,6 +470,11 @@ class BinomialTree(ValuationModel):
 
 
 class ForwardForecastTree(BinomialTree):
+    """Class for trees that create a forward forecast based on assumed volatility.
+
+    This groups methods shard by e.g. Cox Ross Rubinstein and Rendleman Bartter trees.
+    """
+
     @typeguard.typechecked
     def forecast_returns(
         self,
@@ -477,6 +482,16 @@ class ForwardForecastTree(BinomialTree):
         time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
     ) -> Tuple:
+        """Forecast of underlying asset's assumed return distribution at expiration.
+
+        Args:
+            volatility (jaxtyping.Float[jaxtyping.Array, ): Assumed volatility
+            time_to_expiration (jaxtyping.Float[jaxtyping.Array, ): Time to expiration of option and forecast
+            cost_of_carry (jaxtyping.Float[jaxtyping.Array, ): Cost of carry
+
+        Returns:
+            Tuple: Probabilities and corresponding return ratios
+        """
         end_probabilities, end_underlying_returns = self._calc_end_nodes(volatility, time_to_expiration, cost_of_carry)
         probabilities, forecasted_returns = self._forecast(end_probabilities, end_underlying_returns)
         return probabilities, forecasted_returns
@@ -488,7 +503,18 @@ class ForwardForecastTree(BinomialTree):
         volatility: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         time_to_expiration: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "steps steps *#contracts"]:
+    ):
+        """Forecast of underlying asset's assumed price distribution at expiration.
+
+        Args:
+            start_price (jaxtyping.Float[jaxtyping.Array, ): Underlying asset start price
+            volatility (jaxtyping.Float[jaxtyping.Array, ): Assumed volatility
+            time_to_expiration (jaxtyping.Float[jaxtyping.Array, ): Time to expiration of option and forecast
+            cost_of_carry (jaxtyping.Float[jaxtyping.Array, ): Cost of carry
+
+        Returns:
+            Tuple: Probabilities and corresponding return ratios
+        """
         probabilities, returns = self.forecast_returns(volatility, time_to_expiration, cost_of_carry)
         return probabilities, returns * start_price
 
@@ -702,6 +728,7 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         is_call: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         strike: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
     ):
+        """Calculate option values from return distribution."""
         shape = jnp.broadcast_shapes(
             *[
                 _.shape
@@ -738,6 +765,7 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         end_probabilities: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
     ):
+        """Calculate full returns forecast from end return distribution."""
         return self._forecast(end_probabilities, end_underlying_returns)
 
     def forecast_values(
@@ -746,6 +774,7 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         end_probabilities: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
         end_underlying_returns: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
     ):
+        """Calculate full price forecast from end return distribution."""
         probabilities, returns = self.forecast_returns(end_probabilities, end_underlying_returns)
         return probabilities, returns * start_price
 
@@ -753,9 +782,11 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         self,
         expected_option_values,
         init_params,
+        bid_ask_dim=0,
+        barrier_const=1,
         **kwargs,
-        # todo: needs options to pass to _solve_implied_probabilities if necessary
     ):
+        """Solve implied variable(s)."""
         assert "end_underlying_returns" not in init_params, "solving for `end_underlying_returns` is not supported"
         if AllArgs.end_probabilities.value in init_params:
             if len(init_params) > 1:
@@ -764,6 +795,8 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
             return self._solve_implied_probabilities(
                 expected_option_values,
                 init_params[AllArgs.end_probabilities.value],
+                bid_ask_dim=bid_ask_dim,
+                barrier_const=barrier_const,
                 **kwargs,
             )
 
@@ -777,6 +810,8 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         self,
         expected_option_values,
         init_params,
+        bid_ask_dim,
+        barrier_const,
         **kwargs,
     ):
         signature = inspect.signature(self.__call__)
@@ -789,9 +824,12 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
                 **{
                     **params,
                     **kwargs,
-                    AllArgs.end_probabilities.value: self._solve_implied_probabilities(  # becomes an inner loop optimmizing probabilities
+                    # becomes an inner loop optimmizing probabilities
+                    AllArgs.end_probabilities.value: self._solve_implied_probabilities(
                         expected_option_values,
                         params.get(AllArgs.end_probabilities.value),
+                        bid_ask_dim=bid_ask_dim,
+                        barrier_const=barrier_const,
                         **kwargs,
                     ),
                 }
@@ -813,12 +851,6 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         )
         return res
 
-    def _calc_cost_of_carry(  # todo: axe?
-        self,
-        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-    ):
-        return cost_of_carry
-
     def _solve_implied_probabilities(
         self,
         expected_option_values,
@@ -831,7 +863,9 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         signature.bind(**{**kwargs, AllArgs.end_probabilities.value: init_probabilities})
 
         ind = jnp.zeros(tuple(1 for _ in expected_option_values.shape), dtype=jnp.int32)
-        # todo: add option for assumed relative spread, (default to None and require one of bid_ask_dim or relative_spread to be set?)
+        # todo: add option for assumed relative spread,
+        # (default to None and require one of bid_ask_dim or
+        # relative_spread to be set?)
         bid, ask = jnp.take_along_axis(expected_option_values, ind, bid_ask_dim), jnp.take_along_axis(
             expected_option_values, ind + 1, bid_ask_dim
         )
@@ -876,7 +910,7 @@ class RubinsteinImpliedBinomialTree(BinomialTree):
         )
 
 
-def back_combine_path_probabilities(
+def _back_combine_path_probabilities(
     path_probabilities,
     node_return_values,
     risk_free_rate,
@@ -900,19 +934,15 @@ def back_combine_path_probabilities(
     return combined_path_probabilities, node_return_values, up_transition_probability
 
 
-def back_combine_paths_scan(
+def _back_combine_paths_scan(
     carry_tuple,
     _,
 ):
     probs, vals, risk_free_rate = carry_tuple
 
-    ys = back_combine_path_probabilities(
+    ys = _back_combine_path_probabilities(
         probs,
         vals,
         risk_free_rate,
     )[:-1]
     return (*ys, risk_free_rate), ys
-
-
-def back_combine_paths_body(_, values_tuple):
-    return *back_combine_path_probabilities(*values_tuple)[:-1], values_tuple[-1]

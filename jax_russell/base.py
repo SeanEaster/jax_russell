@@ -8,11 +8,16 @@ from typing import Callable, List, Tuple
 
 import jax
 import jaxopt
-import jaxtyping
 from jax import numpy as jnp
+from jaxtyping import Array, Float
+from typing_extensions import TypeAlias
+
+Broadcastable: TypeAlias = Float[Array, "*#contracts"]
 
 
 class AllArgs(Enum):
+    """Enum for names of arguments shared across classes."""
+
     start_price = "start_price"
     volatility = "volatility"
     time_to_expiration = "time_to_expiration"
@@ -55,7 +60,7 @@ def first_order_greeks(value_fn: Callable) -> Callable:
 
     Returns:
         Callable: A callable that returns first derivatives of option values w.r.t. its inputs.
-    """
+    """  # noqa: E501, D202
 
     @partial(jax.jit, static_argnums=0)
     def first_order(*args, argnums=None, **kwargs):
@@ -82,7 +87,7 @@ def second_order_greeks(first_order: Callable) -> Callable:
 
     Returns:
         Callable: A callable that returns second derivatives of option values w.r.t. its inputs.
-    """
+    """  # noqa: E501, D202
 
     @partial(jax.jit, static_argnums=0)
     def second_order(*args, argnums=None, **kwargs):
@@ -105,21 +110,31 @@ def greeks(cls):
 
     Returns:
         cls: the passed class, decorated to add `first_order()` and `second_order()` methods
-    """
+    """  # noqa D202
 
     cls.first_order = first_order_greeks(cls.__call__)
     cls.second_order = second_order_greeks(cls.first_order)
     return cls
 
 
-def zero_named_args(arg_names: List[str]) -> Callable:
+def zero_named_args(arg_names):
+    """Decorate a function to pass zero to one or more arguments by name.
+
+    Args:
+        arg_names (List[str]): argument names
+
+    Returns:
+        Callable: function that passes zero to decorated function for named arguments
+    """
     if type(arg_names) is not list:
         arg_names = [arg_names]
 
-    def decorate(value_fn: Callable) -> Callable:
+    def decorate(value_fn):
         parent_signature, child_signature = signatures(value_fn, arg_names)
 
-        def updated_value_fn(*args, **kwargs):
+        def updated_value_fn(
+            *args,
+        ):
             child_arguments = child_signature.bind(*args)
             shared_params = {k: v for k, v in child_arguments.arguments.items() if k in parent_signature.parameters}
             static_args = {arg_name: jnp.zeros(1) for arg_name in arg_names}
@@ -137,11 +152,11 @@ def zero_named_args(arg_names: List[str]) -> Callable:
     return decorate
 
 
-def _zero_cost_of_carry(_):
-    return jnp.zeros(1)
-
-
 def asay_margined(cls):
+    """Decorate a class to act as an Asay margined futures model.
+
+    This will pass zero to `cost_of_carry` and `risk_free_rate` and remove these arguments from `__call__` signature.
+    """
     cls.__call__ = zero_named_args(
         [
             AllArgs.cost_of_carry.value,
@@ -149,32 +164,19 @@ def asay_margined(cls):
         ]
     )(cls.__call__)
 
-    cls._calc_cost_of_carry = _zero_cost_of_carry
     return cls
 
 
 def futures_option(cls):
+    """Decorate a class to act as an futures option model.
+
+    This will use zero for both `cost_of_carry` remove the argument from `__call__` signature.
+    """
     cls.__call__ = zero_named_args(AllArgs.cost_of_carry.value)(cls.__call__)
-    cls._calc_cost_of_carry = _zero_cost_of_carry
     return cls
 
 
-def _continuous_dividend_cost_of_carry(
-    _,
-    risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-    continuous_dividend: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-):
-    return risk_free_rate - continuous_dividend
-
-
-def _stock_option_cost_of_carry(
-    _,
-    risk_free_rate: jaxtyping.Float[jaxtyping.Array, "*#contracts"],
-):
-    return risk_free_rate
-
-
-def stock_option_continuous_dividend(value_fn: Callable) -> Callable:
+def stock_option_continuous_dividend(value_fn):
     """Decorate a Callable to use `risk_free_rate` - `continuous_dividend` as `cost_of_carry`.
 
     The returned function will pass (`risk_free_rate` - `continuous_dividend`) as `cost_of_carry` to `value_fn` and return the result.
@@ -185,7 +187,7 @@ def stock_option_continuous_dividend(value_fn: Callable) -> Callable:
 
     Returns:
         Callable: A modified function that uses `(risk_free_rate - continuous_dividend)` as `cost_of_carry`
-    """
+    """  # noqa: E501
     parent_signature = inspect.signature(value_fn)
     parameters = [
         (param.replace(name=AllArgs.continuous_dividend.value) if par_name == AllArgs.cost_of_carry.value else param)
@@ -214,14 +216,13 @@ def stock_option_continuous_dividend_cls(cls):
 
     Returns:
         cls: `cls` with `__call__` decorated with `stock_option_continuous_dividend`
-    """
+    """  # noqa D202
 
     cls.__call__ = stock_option_continuous_dividend(cls.__call__)
-    cls._calc_cost_of_carry = _continuous_dividend_cost_of_carry
     return cls
 
 
-def stock_option(value_fn: Callable) -> Callable:
+def stock_option(value_fn):
     """Decorate a Callable to use to use `risk_free_rate` as `cost_of_carry`.
 
     The returned function will pass `risk_free_rate` as both `risk_free_rate` and `cost_of_carry` to `value_fn` and return the result.
@@ -232,11 +233,11 @@ def stock_option(value_fn: Callable) -> Callable:
 
     Returns:
         Callable: A modified function that uses `risk_free_rate` for `cost_of_carry`
-    """
+    """  # noqa: E501, D202
 
     parent_signature, child_signature = signatures(
         value_fn,
-        arg_names=AllArgs.cost_of_carry.value,
+        arg_names=[AllArgs.cost_of_carry.value],
     )
 
     def updated_value_fn(*args):
@@ -263,7 +264,7 @@ def signatures(value_fn: Callable, arg_names: List[str]) -> Tuple[inspect.Signat
 
     Returns:
         Tuple[inspect.Signature, inspect.Signature]: (Original Signature, reduced signature that excludes `arg_names`)
-    """
+    """  # noqa D202
 
     parent_signature = inspect.signature(value_fn)
     parameters = [param for par_name, param in parent_signature.parameters.items() if par_name not in arg_names]
@@ -275,7 +276,6 @@ def signatures(value_fn: Callable, arg_names: List[str]) -> Tuple[inspect.Signat
 def stock_option_cls(cls):
     """Decorate a class to use `risk_free_rate` as `cost_of_carry`."""
     cls.__call__ = stock_option(cls.__call__)
-    cls._calc_cost_of_carry = _stock_option_cost_of_carry
     return cls
 
 

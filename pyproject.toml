@@ -24,6 +24,7 @@ packages = [
 python = ">=3.11,<4.0"
 click = "8.0.1"
 jaxtyping = ">=0.2.23,<1"
+typing_extensions = ">=4.12.2,<5"
 jax = ">=0.4.14,<1"
 jaxlib = ">=0.4.14,<1"
 pymdown-extensions = "^9.4"

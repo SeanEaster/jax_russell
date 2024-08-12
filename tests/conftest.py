@@ -1,3 +1,7 @@
+"""Shared testing fixtures."""
+
+# flake8
+
 import jax
 import pytest
 from jax import numpy as jnp
@@ -6,7 +10,7 @@ import tests.trees.test_values as test_values
 from jax_russell import StockOptionCRRTree, StockOptionRBTree
 from jax_russell.base import AllArgs
 from jax_russell.trees import RubinsteinImpliedBinomialTree
-from tests.test_mixins_solve import expand_for_broadcasting
+from tests.test_mixins_solve import _expand_for_broadcasting
 
 jax.config.update("jax_enable_x64", True)
 
@@ -142,40 +146,6 @@ def qqq_returns_fitted_probs(
 
 
 @pytest.fixture
-def qqq_implied_probs(
-    qqq_fitted_volatility,
-    qqq_start_price,
-    qqq_values,
-    qqq_time_to_expiration,
-    qqq_risk_free_rate,
-    qqq_base_tree,
-    qqq_implied_tree,
-    qqq_is_call_expanded,
-    qqq_strike_expanded,
-):
-    init_probs, returns = qqq_base_tree._calc_end_nodes(
-        qqq_fitted_volatility,
-        qqq_time_to_expiration,
-        qqq_risk_free_rate,
-    )
-
-    returns = returns[:, 0]
-    init_probs = init_probs[:, 0]
-    fitted_probs = qqq_implied_tree.thing(
-        qqq_values,
-        {AllArgs.end_probabilities.value: init_probs},
-        time_to_expiration=qqq_time_to_expiration,
-        is_call=qqq_is_call_expanded,
-        risk_free_rate=qqq_risk_free_rate,
-        strike=qqq_strike_expanded,
-        start_price=qqq_start_price,
-        end_underlying_returns=returns,
-    )
-
-    return returns, fitted_probs
-
-
-@pytest.fixture
 def qqq_returns(qqq_returns_fitted_probs):
     return qqq_returns_fitted_probs[0]
 
@@ -197,7 +167,7 @@ def qqq_strike_expanded(qqq_is_call_strike_expanded):
 
 @pytest.fixture
 def qqq_is_call_strike_expanded(qqq_strike, qqq_is_call):
-    is_call, strike = expand_for_broadcasting(
+    is_call, strike = _expand_for_broadcasting(
         qqq_is_call,
         qqq_strike,
     )

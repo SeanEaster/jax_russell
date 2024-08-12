@@ -30,7 +30,7 @@ def test_mixins_second_order(
     Args:
         tree_class (trees.CRRBinomialTree): A CRRBinomialTree or child
         option_type (str): one of 'american' or 'european'
-        mixin_class (Callable): a mixin class that implements __call__() for the tree
+        decorator (Callable): a decorator that alters __call__() for the model
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
     """
 
@@ -50,9 +50,7 @@ def test_mixins_second_order_bsm(
     """Test instantiation and second_order() for all tree classes, option types and securuity mixins.
 
     Args:
-        tree_class (trees.CRRBinomialTree): A CRRBinomialTree or child
-        option_type (str): one of 'american' or 'european'
-        mixin_class (Callable): a mixin class that implements __call__() for the tree
+        decorator (Callable): a decorator that alters __call__() for the model
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
     """
 

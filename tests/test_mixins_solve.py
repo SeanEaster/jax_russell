@@ -3,13 +3,11 @@
 import inspect
 
 import jax
-import jaxopt
 import pytest
 from jax import numpy as jnp
 
 import tests.trees.test_forecast as test_forecast
 import tests.trees.test_values as test_values
-from jax_russell import StockOptionCRRTree
 from jax_russell.base import AllArgs, greeks
 from jax_russell.bsm import GeneralizedBlackScholesMerten
 from jax_russell.trees import RubinsteinImpliedBinomialTree
@@ -53,7 +51,7 @@ def test_mixins_solve(
     Args:
         tree_class (trees.CRRBinomialTree): A CRRBinomialTree or child
         option_type (str): one of 'american' or 'european'
-        mixin_class (Callable): a mixin class that implements __call__() for the tree
+        decorator (Callable): a decorator  that alters __call__() for the model
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
         implied_arg: argument to solve for
     """
@@ -98,8 +96,7 @@ def test_mixins_solve_bsm(
     """Test instantiation, call and solve for all tree classes, option types and securuity mixins.
 
     Args:
-        option_type (str): one of 'american' or 'european'
-        mixin_class (Callable): a mixin class that implements __call__() for the tree
+        decorator (Callable): a decorator  that alters __call__() for the model
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
         implied_arg: argument to solve for
     """
@@ -138,6 +135,7 @@ def test_mixins_solve_bsm(
 
 
 def test_solve_implied_tree():
+    """Test that implied values from calculated price are equivalent."""
     tree = RubinsteinImpliedBinomialTree(
         test_forecast.END_VALUES.shape[0] - 1,
         "american",
@@ -182,7 +180,7 @@ def test_solve_implied_tree():
     )
 
 
-def expand_for_broadcasting(*args):
+def _expand_for_broadcasting(*args):
     return tuple(
         jnp.expand_dims(
             arr,
@@ -194,14 +192,9 @@ def expand_for_broadcasting(*args):
 
 def test_feasible_values(qqq_fitted_values, qqq_bid_ask):
     """Test that an implied tree can derive one set of implied probabilities from a set of options."""
-
     assert jnp.all(qqq_bid_ask[0] < qqq_fitted_values) and jnp.all(qqq_fitted_values <= qqq_bid_ask[1])
 
 
 def test_feasible_rate(qqq_returns_fitted_probs, qqq_risk_free_rate):
+    """Test that returned probability distribution is implied-rate-feasible."""
     assert jnp.allclose(jnp.power(jnp.dot(*qqq_returns_fitted_probs), 12), jnp.exp(qqq_risk_free_rate), atol=1e-5)
-
-
-def test_implied_tree_solve_implied(qqq_implied_probs):
-    print(qqq_implied_probs)
-    assert False
