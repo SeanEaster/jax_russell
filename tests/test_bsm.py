@@ -1,8 +1,11 @@
 """Value tests for BSM models."""
 
+import jax
 import jax.numpy as jnp
 
 from jax_russell import StockOptionBSM
+
+jax.config.update("jax_enable_x64", True)
 
 haug_bsm_start_price = jnp.array([60.0])
 haug_bsm_volatility = jnp.array([0.3])

@@ -1,8 +1,11 @@
 """Test Discounter classes for shapes and values."""
 
+import jax
 from jax import numpy as jnp
 
 from jax_russell.trees import AmericanDiscounter, EuropeanDiscounter
+
+jax.config.update("jax_enable_x64", True)
 
 RB_FOUR_STEP_FINAL = jnp.array([190.61, 137.89, 99.75, 72.16, 52.20])
 RB_FOUR_STEP_EXPECTED = jnp.array(14.41)

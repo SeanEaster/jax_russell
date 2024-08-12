@@ -1,10 +1,13 @@
 """Test against Haug example."""
 
+import jax
 import pytest
 from jax import numpy as jnp
 
 from tests.base import BOOL_LIST, expand_args_for_broadcasting, option_types
 from tests.trees import forward_tree_classes
+
+jax.config.update("jax_enable_x64", True)
 
 
 @pytest.mark.parametrize("expand_start_price", BOOL_LIST)

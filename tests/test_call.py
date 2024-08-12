@@ -2,11 +2,14 @@
 
 from typing import Any
 
+import jax
 import pytest
 from jax import numpy as jnp
 
 from tests.base import haug_inputs, option_types
 from tests.trees import forward_tree_classes
+
+jax.config.update("jax_enable_x64", True)
 
 
 @pytest.mark.parametrize("tree_class", forward_tree_classes)

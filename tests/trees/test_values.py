@@ -8,6 +8,7 @@ from jax_russell import StockOptionRBTree
 from tests.base import option_types
 
 jax.config.update("jax_enable_x64", True)
+
 rb_steps = [12, 52, 100]
 rb_expected = {
     "american": {

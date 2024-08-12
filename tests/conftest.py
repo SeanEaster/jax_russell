@@ -42,7 +42,6 @@ def qqq_solve_implied_kwargs(
     qqq_is_call_expanded,
     qqq_strike_expanded,
 ):
-
     returns, _ = qqq_returns_fitted_probs
     return {
         AllArgs.start_price.value: qqq_start_price,
@@ -92,7 +91,6 @@ def qqq_fitted_values(
     qqq_strike_expanded,
     qqq_returns_fitted_probs,
 ):
-
     returns, fitted_probs = qqq_returns_fitted_probs
 
     fitted_values = qqq_implied_tree(
@@ -132,7 +130,6 @@ def qqq_returns_fitted_probs(
         qqq_values,
         init_probs,
         barrier_const=1,
-        probability_threshold=1e-16,
         time_to_expiration=qqq_time_to_expiration,
         is_call=qqq_is_call_expanded,
         risk_free_rate=qqq_risk_free_rate,
@@ -244,7 +241,6 @@ def qqq_tree_type():
 
 @pytest.fixture
 def qqq_base_tree(qqq_steps, qqq_tree_type):
-
     return StockOptionCRRTree(qqq_steps, qqq_tree_type)
 
 

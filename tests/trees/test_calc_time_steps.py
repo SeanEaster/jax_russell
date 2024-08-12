@@ -1,7 +1,11 @@
 """Test time step calculator."""
+
+import jax
 from jax import numpy as jnp
 
 from jax_russell import trees
+
+jax.config.update("jax_enable_x64", True)
 
 
 def test_calc_time_steps():

@@ -2,11 +2,14 @@
 
 from typing import Callable, Tuple
 
+import jax
 import pytest
 from jax import numpy as jnp
 
 from jax_russell import greeks, trees
 from tests.base import class_decorators
+
+jax.config.update("jax_enable_x64", True)
 
 forward_tree_classes = [
     trees.CRRBinomialTree,

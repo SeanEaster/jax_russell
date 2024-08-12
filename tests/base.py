@@ -1,8 +1,11 @@
 """Components shared across tests."""
 
+import jax
 from jax import numpy as jnp
 
 import jax_russell.base
+
+jax.config.update("jax_enable_x64", True)
 
 option_types = [
     "european",

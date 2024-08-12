@@ -6,7 +6,6 @@ from jax import numpy as jnp
 from jax_russell.trees import RubinsteinImpliedBinomialTree
 
 jax.config.update("jax_enable_x64", True)
-# dtype = jnp.float32
 
 END_VALUES = jnp.array(
     [

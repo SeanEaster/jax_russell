@@ -1,7 +1,11 @@
 """Test combinatorial function."""
+
+import jax
 from jax import numpy as jnp
 
 from jax_russell import trees
+
+jax.config.update("jax_enable_x64", True)
 
 
 def test_comb():

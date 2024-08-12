@@ -1,10 +1,13 @@
 """Test all valuation classes with all mixins."""
 
+import jax
 import pytest
 from jax import numpy as jnp
 
 from jax_russell.bsm import GeneralizedBlackScholesMerten
 from tests import base, trees
+
+jax.config.update("jax_enable_x64", True)
 
 
 @pytest.mark.parametrize("tree_class", trees.forward_tree_classes)

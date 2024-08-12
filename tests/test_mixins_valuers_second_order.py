@@ -1,10 +1,13 @@
 """Test all valuation classes with all mixins, valuers second order greeks."""
 
+import jax
 import pytest
 
 from jax_russell.base import greeks
 from jax_russell.trees import AmericanDiscounter, SoftplusValuer
 from tests import base, trees
+
+jax.config.update("jax_enable_x64", True)
 
 
 @pytest.mark.parametrize("tree_class", trees.forward_tree_classes)
