@@ -1,18 +1,28 @@
 """Test all valuation classes with all mixins first order greeks."""
+
+import jax
 import pytest
 
-from tests.base import mixin_call_args, mixin_classes, option_types
-from tests.trees import tree_classes
+from jax_russell.base import greeks
 from jax_russell.bsm import GeneralizedBlackScholesMerten
+from tests import base, trees
+
+jax.config.update("jax_enable_x64", True)
 
 
-@pytest.mark.parametrize("tree_class", tree_classes)
-@pytest.mark.parametrize("option_type", option_types)
-@pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
+@pytest.mark.parametrize("tree_class", trees.forward_tree_classes)
+@pytest.mark.parametrize("option_type", base.option_types)
+@pytest.mark.parametrize(
+    "decorator,mixin_call_args",
+    zip(
+        base.class_decorators,
+        base.mixin_call_args,
+    ),
+)
 def test_mixins_first_order(
     tree_class,
     option_type,
-    mixin_class,
+    decorator,
     mixin_call_args,
 ):
     """Test instantiation and first_order() for all tree classes, option types and securuity mixins.
@@ -20,31 +30,33 @@ def test_mixins_first_order(
     Args:
         tree_class (trees.CRRBinomialTree): A CRRBinomialTree or child
         option_type (str): one of 'american' or 'european'
-        mixin_class (Callable): a mixin class that implements __call__() for the tree
+        decorator (Callable): a decorator that alters __call__() for the tree
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
     """
 
-    class UnderTest(mixin_class, tree_class):
+    @greeks
+    @decorator
+    class UnderTest(tree_class):  # type: ignore
         pass
 
     UnderTest(5, option_type).first_order(*mixin_call_args)
 
 
-@pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
+@pytest.mark.parametrize("decorator,mixin_call_args", zip(base.class_decorators, base.mixin_call_args))
 def test_mixins_first_order_bsm(
-    mixin_class,
+    decorator,
     mixin_call_args,
 ):
     """Test instantiation and first_order() for all tree classes, option types and securuity mixins.
 
     Args:
-        tree_class (trees.CRRBinomialTree): A CRRBinomialTree or child
-        option_type (str): one of 'american' or 'european'
-        mixin_class (Callable): a mixin class that implements __call__() for the tree
+        decorator (Callable): a decorator that alters __call__() for the tree
         mixin_call_args (Tuple[Any]): args to pass tree.__call__()
     """
 
-    class UnderTest(mixin_class, GeneralizedBlackScholesMerten):
+    @greeks
+    @decorator
+    class UnderTest(GeneralizedBlackScholesMerten):
         pass
 
     UnderTest().first_order(*mixin_call_args)

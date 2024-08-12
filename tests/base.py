@@ -1,9 +1,16 @@
 """Components shared across tests."""
+
+import jax
 from jax import numpy as jnp
 
 import jax_russell.base
 
-option_types = ["european", "american"]
+jax.config.update("jax_enable_x64", True)
+
+option_types = [
+    "european",
+    "american",
+]
 
 haug_volatility = jnp.array([0.3])
 haug_time_to_expiration = jnp.array([0.5])
@@ -36,11 +43,12 @@ mixin_call_args = [
         haug_strike,
     ),
 ]
-mixin_classes = [
-    jax_russell.base.StockOptionMixin,
-    jax_russell.base.FuturesOptionMixin,
-    jax_russell.base.AsayMargineduturesOptionMixin,
-    jax_russell.base.StockOptionContinuousDividendMixin,
+
+class_decorators = [
+    jax_russell.base.stock_option_cls,
+    jax_russell.base.futures_option,
+    jax_russell.base.asay_margined,
+    jax_russell.base.stock_option_continuous_dividend_cls,
 ]
 haug_crr_full_values = jnp.array(
     [

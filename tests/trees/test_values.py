@@ -1,9 +1,13 @@
 """Test option value functions against example cases."""
+
+import jax
 import pytest
 from jax import numpy as jnp
 
 from jax_russell import StockOptionRBTree
 from tests.base import option_types
+
+jax.config.update("jax_enable_x64", True)
 
 rb_steps = [12, 52, 100]
 rb_expected = {
@@ -19,15 +23,16 @@ rb_expected = {
     },
 }
 
+rb_time_to_expiration = jnp.array(1.0)
+rb_volatility = jnp.array(0.324)
+rb_risk_free_rate = jnp.exp(jnp.array(0.05)) - 1
+
 
 @pytest.mark.parametrize("steps", rb_steps)
 @pytest.mark.parametrize("option_type", option_types)
 def test_rb(steps, option_type):
     """Test tree values against values given in Rendleman Bartter (1979)."""
     rb_start = jnp.array([100.0])
-    rb_volatility = jnp.array([0.324])
-    rb_time_to_expiration = jnp.array([1.0])
-    rb_risk_free_rate = jnp.exp(jnp.array([0.05])) - 1
     rb_is_call = jnp.array([0.0])
     rb_strike = jnp.expand_dims(jnp.array([75.0, 100.0, 125.0]), -1)
 

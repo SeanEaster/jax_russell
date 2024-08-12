@@ -2,108 +2,286 @@
 
 import abc
 import inspect
-from functools import partial
-from typing import Protocol
+from enum import Enum
+from functools import partial, wraps
+from typing import Callable, List, Tuple
 
 import jax
 import jaxopt
-import jaxtyping
 from jax import numpy as jnp
+from jaxtyping import Array, Float
+from typing_extensions import TypeAlias
+
+Broadcastable: TypeAlias = Float[Array, "*#contracts"]
 
 
-class ImplementsValueProtocol(Protocol):
-    """Protocol used to tell `mypy` mixins rely on another class to implement `value()`."""
+class AllArgs(Enum):
+    """Enum for names of arguments shared across classes."""
 
-    def value(
-        self,
-        start_price: jaxtyping.Float[
-            jaxtyping.Array,
-            "#contracts",
-        ],
-        volatility: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        is_call: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        strike: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "#contracts"]:
-        """Should be implemented by another mixed in class.
-
-        Returns:
-            jnp.array: option contract values
-        """
+    start_price = "start_price"
+    volatility = "volatility"
+    time_to_expiration = "time_to_expiration"
+    is_call = "is_call"
+    strike = "strike"
+    risk_free_rate = "risk_free_rate"
+    cost_of_carry = "cost_of_carry"
+    continuous_dividend = "continuous_dividend"
+    end_probabilities = "end_probabilities"
+    end_underlying_returns = "end_underlying_returns"
 
 
-class ValuationModel(abc.ABC):
-    """Abstract class for valuation methods."""
+def broadcast_args(meth: Callable) -> Callable:
+    """Wrap a function to broadcast its inputs (arrays) before call.
 
-    argnums = list(range(5))
+    Args:
+        meth (Callable): A callable whose inputs are arrays.
 
-    @abc.abstractmethod
-    @partial(jax.jit, static_argnums=0)
-    def value(
-        self,
-        start_price: jaxtyping.Float[
-            jaxtyping.Array,
-            "#contracts",
-        ],
-        volatility: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        cost_of_carry: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        is_call: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        strike: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "#contracts"]:
-        """Calculate the value of an option.
+    Returns:
+        Callable: A callable that calls `jnp.broadcast_arrays` before passing to the original function
+    """
 
-        This method is used internally by `__call__()`, and should return the value of options.
-        By default, `__call__()` is a pass through to `value()`, but many available mixins overwrite this behavior to pass arguments to `value()`.
-        In these cases, this allows the single, general method `value()` to implement valuations, while leveraging `__call__()` for security-specific argument logic and meaningful autodifferentiation.
-        """  # noqa
+    @wraps(meth)
+    def broadcasted(self, *args):
+        return meth(self, *jnp.broadcast_arrays(*args))
 
-    @partial(jax.jit, static_argnums=0)
-    def __call__(self, *args, **kwargs):
-        """Value arrays of options.
+    return broadcasted
 
-        By default, `__call__` checks its arguments against `value()` and passes them through.
 
-        Returns:
-            jnp.array: option values
-        """
-        inspect.signature(self.value).bind(*args, **kwargs)
-        return self.value(*jnp.broadcast_arrays(*args), **kwargs)
+def first_order_greeks(value_fn: Callable) -> Callable:
+    """Decorate a value function to instead return first-order greeks.
+
+    The returned function will accept the same arguments, in the same order, as the orginal, and return derivatives in corresponding order.
+    E.g., if `start_price` is the first argument, delta will be the first value in the returned derivatives.
+    The returned function will have addition keyword argument `argnums`.
+    This can be used to select a subset of greeks by passing a list of their **1-indexed** indices and 0, which corresponds to `self`.
+
+    Args:
+        value_fn (Callable): A function or other callable that returns option values.
+
+    Returns:
+        Callable: A callable that returns first derivatives of option values w.r.t. its inputs.
+    """  # noqa: E501, D202
 
     @partial(jax.jit, static_argnums=0)
-    def first_order(self, *args, **kwargs):
-        """Automatically calculate first-order greeks.
-
-        Returns:
-            jnp.array: first-order derivatives of option values
-        """
-        inspect.signature(self).bind(*args, **kwargs)
+    def first_order(*args, argnums=None, **kwargs):
         return jnp.hstack(
             jax.jacfwd(
-                self,
-                range(len(args)) if self.argnums is None else self.argnums,
+                value_fn,
+                range(1, len(args)) if argnums is None else argnums,
             )(*args, **kwargs)
         )
 
-    @partial(jax.jit, static_argnums=0)
-    def second_order(self, *args, **kwargs):
-        """Automatically calculate second-order greeks.
+    return first_order
 
-        Returns:
-            jnp.array: second-order derivatives of option values
-        """
-        inspect.signature(self).bind(*args, **kwargs)
+
+def second_order_greeks(first_order: Callable) -> Callable:
+    """Decorate a value function to instead return second-order greeks.
+
+    The returned function will accept the same arguments, in the same order, as the orginal, and return derivatives in corresponding order.
+    E.g., if `start_price` is the first argument, gamma will be the first value in the returned derivatives.
+    The returned function will have addition keyword argument `argnums`.
+    This can be used to select a subset of greeks by passing a list of their **1-indexed** indices and 0, which corresponds to `self`.
+
+    Args:
+        value_fn (Callable): A function or other callable that returns option values.
+
+    Returns:
+        Callable: A callable that returns second derivatives of option values w.r.t. its inputs.
+    """  # noqa: E501, D202
+
+    @partial(jax.jit, static_argnums=0)
+    def second_order(*args, argnums=None, **kwargs):
         return jnp.concatenate(
             jax.jacfwd(
-                self.first_order,
-                range(len(args)) if self.argnums is None else self.argnums,
-                # self.argnums,
+                first_order,
+                range(1, len(args)) if argnums is None else argnums,
             )(*args, **kwargs),
             axis=-1,
         )
+
+    return second_order
+
+
+def greeks(cls):
+    """Decorate a class to support first- and second-order greeks.
+
+    Args:
+        cls (Callable): a class whose `__call__` method calculates option values
+
+    Returns:
+        cls: the passed class, decorated to add `first_order()` and `second_order()` methods
+    """  # noqa D202
+
+    cls.first_order = first_order_greeks(cls.__call__)
+    cls.second_order = second_order_greeks(cls.first_order)
+    return cls
+
+
+def zero_named_args(arg_names):
+    """Decorate a function to pass zero to one or more arguments by name.
+
+    Args:
+        arg_names (List[str]): argument names
+
+    Returns:
+        Callable: function that passes zero to decorated function for named arguments
+    """
+    if type(arg_names) is not list:
+        arg_names = [arg_names]
+
+    def decorate(value_fn):
+        parent_signature, child_signature = signatures(value_fn, arg_names)
+
+        def updated_value_fn(
+            *args,
+        ):
+            child_arguments = child_signature.bind(*args)
+            shared_params = {k: v for k, v in child_arguments.arguments.items() if k in parent_signature.parameters}
+            static_args = {arg_name: jnp.zeros(1) for arg_name in arg_names}
+            parent_arguments = parent_signature.bind(
+                **{
+                    **shared_params,
+                    **static_args,
+                }
+            )
+            return value_fn(*parent_arguments.args)
+
+        updated_value_fn.__signature__ = child_signature
+        return updated_value_fn
+
+    return decorate
+
+
+def asay_margined(cls):
+    """Decorate a class to act as an Asay margined futures model.
+
+    This will pass zero to `cost_of_carry` and `risk_free_rate` and remove these arguments from `__call__` signature.
+    """
+    cls.__call__ = zero_named_args(
+        [
+            AllArgs.cost_of_carry.value,
+            AllArgs.risk_free_rate.value,
+        ]
+    )(cls.__call__)
+
+    return cls
+
+
+def futures_option(cls):
+    """Decorate a class to act as an futures option model.
+
+    This will use zero for both `cost_of_carry` remove the argument from `__call__` signature.
+    """
+    cls.__call__ = zero_named_args(AllArgs.cost_of_carry.value)(cls.__call__)
+    return cls
+
+
+def stock_option_continuous_dividend(value_fn):
+    """Decorate a Callable to use `risk_free_rate` - `continuous_dividend` as `cost_of_carry`.
+
+    The returned function will pass (`risk_free_rate` - `continuous_dividend`) as `cost_of_carry` to `value_fn` and return the result.
+    The returned function's signature is modified to replace `cost_of_carry` with `continuous_dividend`.
+
+    Args:
+        value_fn (Callable): A function that includes arguments `risk_free_rate` and `cost_of_carry`
+
+    Returns:
+        Callable: A modified function that uses `(risk_free_rate - continuous_dividend)` as `cost_of_carry`
+    """  # noqa: E501
+    parent_signature = inspect.signature(value_fn)
+    parameters = [
+        (param.replace(name=AllArgs.continuous_dividend.value) if par_name == AllArgs.cost_of_carry.value else param)
+        for par_name, param in parent_signature.parameters.items()
+    ]
+
+    child_signature = parent_signature.replace(parameters=parameters)
+
+    def updated_value_fn(*args):
+        child_arguments = child_signature.bind(*args)
+        shared_params = {k: v for k, v in child_arguments.arguments.items() if k in parent_signature.parameters}
+        parent_arguments = parent_signature.bind_partial(**shared_params)
+        parent_arguments.arguments[AllArgs.cost_of_carry.value] = (
+            child_arguments.arguments[AllArgs.risk_free_rate.value]
+            - child_arguments.arguments[AllArgs.continuous_dividend.value]
+        )
+
+        return value_fn(*parent_arguments.args)
+
+    updated_value_fn.__signature__ = child_signature
+    return updated_value_fn
+
+
+def stock_option_continuous_dividend_cls(cls):
+    """Decorate class to support continous dividends.
+
+    Returns:
+        cls: `cls` with `__call__` decorated with `stock_option_continuous_dividend`
+    """  # noqa D202
+
+    cls.__call__ = stock_option_continuous_dividend(cls.__call__)
+    return cls
+
+
+def stock_option(value_fn):
+    """Decorate a Callable to use to use `risk_free_rate` as `cost_of_carry`.
+
+    The returned function will pass `risk_free_rate` as both `risk_free_rate` and `cost_of_carry` to `value_fn` and return the result.
+    The returned function's signature is modified to remove `cost_of_carry`.
+
+    Args:
+        value_fn (Callable): A function that includes arguments `risk_free_rate` and `cost_of_carry`
+
+    Returns:
+        Callable: A modified function that uses `risk_free_rate` for `cost_of_carry`
+    """  # noqa: E501, D202
+
+    parent_signature, child_signature = signatures(
+        value_fn,
+        arg_names=[AllArgs.cost_of_carry.value],
+    )
+
+    def updated_value_fn(*args):
+        child_arguments = child_signature.bind(*args)
+        shared_params = {k: v for k, v in child_arguments.arguments.items() if k in parent_signature.parameters}
+        parent_arguments = parent_signature.bind(
+            **{
+                **shared_params,
+                **{AllArgs.cost_of_carry.value: child_arguments.arguments[AllArgs.risk_free_rate.value]},
+            }
+        )
+        return value_fn(*parent_arguments.args)
+
+    updated_value_fn.__signature__ = child_signature
+    return updated_value_fn
+
+
+def signatures(value_fn: Callable, arg_names: List[str]) -> Tuple[inspect.Signature, inspect.Signature]:
+    """Inspect signature and remove arguments.
+
+    Args:
+        value_fn (Callable): A function whose arguments include those listed in `arg_names`
+        arg_names (List[str]): A list of argument names found in `value_fn`
+
+    Returns:
+        Tuple[inspect.Signature, inspect.Signature]: (Original Signature, reduced signature that excludes `arg_names`)
+    """  # noqa D202
+
+    parent_signature = inspect.signature(value_fn)
+    parameters = [param for par_name, param in parent_signature.parameters.items() if par_name not in arg_names]
+
+    child_signature = parent_signature.replace(parameters=parameters)
+    return parent_signature, child_signature
+
+
+def stock_option_cls(cls):
+    """Decorate a class to use `risk_free_rate` as `cost_of_carry`."""
+    cls.__call__ = stock_option(cls.__call__)
+    return cls
+
+
+@greeks
+class ValuationModel(abc.ABC):
+    """Abstract class for valuation methods."""
 
     def solve_implied(
         self,
@@ -133,170 +311,16 @@ class ValuationModel(abc.ABC):
             residuals = expected - self(*bound_arguments.args, **bound_arguments.kwargs)
             return jnp.mean(residuals**2)
 
-        solver = jaxopt.BFGS(
+        solver = jaxopt.LBFGSB(
             objective,
         )
         res = solver.run(
             init_params,
             expected=expected_option_values,
             kwargs=kwargs,
+            bounds=(
+                {k: jnp.zeros_like(v) for k, v in init_params.items()},
+                {k: jnp.ones_like(v) * jnp.inf for k, v in init_params.items()},
+            ),
         )
         return res
-
-
-class AsayMargineduturesOptionMixin:
-    """Assumes zero interest and zero cost of carry."""
-
-    argnums = list(range(3))
-
-    def __call__(
-        self: ImplementsValueProtocol,
-        start_price: jaxtyping.Float[
-            jaxtyping.Array,
-            "#contracts",
-        ],
-        volatility: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        is_call: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        strike: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "#contracts"]:
-        """Calculate values for option contracts.
-
-        Assumes zero interest and zero cost of carry.
-
-        Returns:
-            jnp.array: contract values
-        """
-        return self.value(
-            start_price,
-            volatility,
-            time_to_expiration,
-            jnp.zeros(1),
-            jnp.zeros(1),
-            is_call,
-            strike,
-        )
-
-
-class FuturesOptionMixin:
-    """Assumes zero cost of carry."""
-
-    argnums = list(range(4))
-
-    def __call__(
-        self: ImplementsValueProtocol,
-        start_price: jaxtyping.Float[
-            jaxtyping.Array,
-            "#contracts",
-        ],
-        volatility: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        is_call: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        strike: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "#contracts"]:
-        """Calculate values for option contracts.
-
-        Assumes zero cost of carry.
-
-        Returns:
-            jnp.array: contract values
-        """
-        return self.value(
-            start_price,
-            volatility,
-            time_to_expiration,
-            risk_free_rate,
-            jnp.zeros(risk_free_rate.shape),
-            is_call,
-            strike,
-        )
-
-
-class StockOptionContinuousDividendMixin:
-    """Adjust a stock option by a continuous dividend."""
-
-    argnums = list(range(5))
-
-    def __call__(
-        self: ImplementsValueProtocol,
-        start_price: jaxtyping.Float[
-            jaxtyping.Array,
-            "#contracts",
-        ],
-        volatility: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        continuous_dividend: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        is_call: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        strike: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "#contracts"]:
-        """Calculate values for option contracts.
-
-        Adjusts the risk-free rate by (subtracting) the continuous dividend to calculate cost of carry.
-
-        Returns:
-            jnp.array: contract values
-        """
-        return self.value(
-            start_price,
-            volatility,
-            time_to_expiration,
-            risk_free_rate,
-            risk_free_rate - continuous_dividend,
-            is_call,
-            strike,
-        )
-
-
-class StockOptionMixin:
-    """Uses `risk_free_rate` for both the risk free rate and cost of carry.
-
-    This gives the correct rho, and is the cost of carry defined in Haug.
-    """
-
-    argnums = list(range(4))
-
-    def __call__(
-        self: ImplementsValueProtocol,
-        start_price: jaxtyping.Float[
-            jaxtyping.Array,
-            "#contracts",
-        ],
-        volatility: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        time_to_expiration: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        risk_free_rate: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        is_call: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-        strike: jaxtyping.Float[jaxtyping.Array, "#contracts"],
-    ) -> jaxtyping.Float[jaxtyping.Array, "#contracts"]:
-        """Calculate values for option contracts.
-
-        Uses the risk-free rate for both risk-free rate and cost of carry, ensuring accurate greeks.
-
-        Returns:
-            jnp.array: contract values
-        """
-        (
-            start_price,
-            volatility,
-            time_to_expiration,
-            risk_free_rate,
-            is_call,
-            strike,
-        ) = jnp.broadcast_arrays(
-            start_price,
-            volatility,
-            time_to_expiration,
-            risk_free_rate,
-            is_call,
-            strike,
-        )
-        return self.value(
-            start_price,
-            volatility,
-            time_to_expiration,
-            risk_free_rate,
-            risk_free_rate,
-            is_call,
-            strike,
-        )

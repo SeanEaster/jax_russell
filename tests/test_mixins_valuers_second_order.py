@@ -1,24 +1,34 @@
 """Test all valuation classes with all mixins, valuers second order greeks."""
+
+import jax
 import pytest
 
-from jax_russell import trees
-from tests.base import mixin_call_args, mixin_classes, option_types
-from tests.trees import tree_classes
+from jax_russell.base import greeks
+from jax_russell.trees import AmericanDiscounter, SoftplusValuer
+from tests import base, trees
+
+jax.config.update("jax_enable_x64", True)
 
 
-@pytest.mark.parametrize("tree_class", tree_classes)
-@pytest.mark.parametrize("option_type", option_types)
-@pytest.mark.parametrize("mixin_class,mixin_call_args", zip(mixin_classes, mixin_call_args))
+@pytest.mark.parametrize("tree_class", trees.forward_tree_classes)
+@pytest.mark.parametrize("option_type", base.option_types)
+@pytest.mark.parametrize(
+    "decorator,mixin_call_args",
+    zip(
+        base.class_decorators,
+        base.mixin_call_args,
+    ),
+)
 @pytest.mark.parametrize(
     "valuer_class,valuer_args",
     [
-        (trees.SoftplusValuer, (2.5e-2,)),
+        (SoftplusValuer, (2.5e-2,)),
     ],
 )
 def test_mixins_valuers_second_order(
     tree_class,
     option_type,
-    mixin_class,
+    decorator,
     mixin_call_args,
     valuer_class,
     valuer_args,
@@ -34,12 +44,14 @@ def test_mixins_valuers_second_order(
         valuer_args Tuple[Any]: args to pass `valuer_class.__init__()`
     """  # noqa
 
-    class UnderTest(mixin_class, tree_class):  # type: ignore
+    @greeks
+    @decorator
+    class UnderTest(tree_class):  # type: ignore
         pass
 
     steps = 5
     UnderTest(
         steps,
         option_type,
-        trees.AmericanDiscounter(steps, valuer_class(*valuer_args)) if option_type == "american" else None,
+        AmericanDiscounter(valuer_class(*valuer_args)) if option_type == "american" else None,
     ).second_order(*mixin_call_args)
